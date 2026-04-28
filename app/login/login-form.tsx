@@ -1,24 +1,22 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import Link from "next/link";
+import { useActionState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import { signIn, type LoginState } from "./actions";
+
 export function LoginForm() {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [state, formAction, pending] = useActionState<LoginState, FormData>(
+    signIn,
+    undefined,
+  );
 
   return (
-    <form
-      className="grid gap-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        startTransition(() => router.push("/"));
-      }}
-    >
+    <form className="grid gap-4" action={formAction}>
       <div className="grid gap-1.5">
         <Label htmlFor="email">Email</Label>
         <Input
@@ -27,11 +25,18 @@ export function LoginForm() {
           type="email"
           autoComplete="email"
           required
-          defaultValue="stepan@example.com"
         />
       </div>
       <div className="grid gap-1.5">
-        <Label htmlFor="password">Пароль</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="password">Пароль</Label>
+          <Link
+            href="/auth/forgot-password"
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Забыли пароль?
+          </Link>
+        </div>
         <Input
           id="password"
           name="password"
@@ -40,6 +45,11 @@ export function LoginForm() {
           required
         />
       </div>
+      {state?.error ? (
+        <p role="alert" className="text-xs text-destructive">
+          {state.error}
+        </p>
+      ) : null}
       <Button type="submit" disabled={pending}>
         {pending ? "Входим…" : "Войти"}
       </Button>

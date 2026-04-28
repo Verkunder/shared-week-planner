@@ -7,24 +7,25 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { LoginForm } from "@/app/login/login-form";
+
+import { ForgotPasswordForm } from "./forgot-password-form";
 
 export const metadata: Metadata = {
-  title: "Вход",
+  title: "Сброс пароля",
 };
 
-export default function LoginPage() {
+export default function ForgotPasswordPage() {
   return (
     <div className="flex min-h-svh items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Вход</CardTitle>
+          <CardTitle>Сброс пароля</CardTitle>
           <CardDescription>
-            С возвращением. Продолжите с того места, где остановились.
+            Пришлём ссылку для восстановления на ваш email.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <LoginForm />
+          <ForgotPasswordForm />
         </CardContent>
       </Card>
     </div>

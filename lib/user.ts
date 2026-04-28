@@ -1,15 +1,8 @@
-export type User = {
+export type SessionUser = {
   id: string;
-  name: string;
   email: string;
+  name: string;
   avatarUrl?: string;
-};
-
-export const mockUser: User = {
-  id: "u_1",
-  name: "Степан Капустин",
-  email: "stepan@example.com",
-  avatarUrl: undefined,
 };
 
 export function initials(name: string) {
