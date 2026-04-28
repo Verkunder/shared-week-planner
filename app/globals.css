@@ -121,19 +121,6 @@
 }
 
 @media (max-width: 640px) {
-  .fc .fc-toolbar.fc-header-toolbar {
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-  }
-  .fc .fc-toolbar-title {
-    font-size: 1rem;
-    line-height: 1.2;
-  }
-  .fc .fc-button {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-  }
   .fc .fc-col-header-cell-cushion {
     font-size: 0.75rem;
     padding: 4px 2px;
@@ -145,7 +132,6 @@
   .fc .fc-timegrid-slot {
     height: 1.75em;
   }
-  .fc .fc-list-day-cushion,
   .fc .fc-daygrid-day-number {
     font-size: 0.75rem;
   }

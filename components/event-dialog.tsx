@@ -48,7 +48,10 @@ export type EventDialogState =
       ends_at: string;
       all_day: boolean;
       category_id: string | null;
+      color: string | null;
     };
+
+const FALLBACK_COLOR = "#6b7280";
 
 export function EventDialog({
   state,
@@ -116,11 +119,21 @@ function EventDialogBody({
   const [endInput, setEndInput] = useState(() =>
     formatForInput(state.ends_at, state.all_day, "end"),
   );
-  const [categoryId, setCategoryId] = useState<string>(
-    isEdit && state.category_id ? state.category_id : NO_CATEGORY,
+  const initialCategoryId =
+    isEdit && state.category_id ? state.category_id : NO_CATEGORY;
+  const initialCategory = categories.find((c) => c.id === initialCategoryId);
+  const [categoryId, setCategoryId] = useState<string>(initialCategoryId);
+  const [color, setColor] = useState<string>(
+    (isEdit ? state.color : null) ?? initialCategory?.color ?? FALLBACK_COLOR,
   );
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string>();
+
+  function handleCategoryChange(next: string) {
+    setCategoryId(next);
+    const cat = categories.find((c) => c.id === next);
+    if (cat) setColor(cat.color);
+  }
 
   function handleAllDayToggle(checked: boolean) {
     const startIso = parseFromInput(startInput, allDay, "start");
@@ -145,6 +158,7 @@ function EventDialogBody({
       ends_at,
       all_day: allDay,
       category_id: categoryId === NO_CATEGORY ? null : categoryId,
+      color,
     };
 
     startTransition(async () => {
@@ -239,10 +253,11 @@ function EventDialogBody({
       </div>
 
       <div className="grid gap-1.5">
-        <Label htmlFor="event-category">Категория</Label>
+        <Label htmlFor="event-category">Категория и цвет</Label>
+        <div className="flex gap-2">
         <Select
           value={categoryId}
-          onValueChange={(v) => setCategoryId(v ?? NO_CATEGORY)}
+          onValueChange={(v) => handleCategoryChange(v ?? NO_CATEGORY)}
           disabled={readOnly}
         >
           <SelectTrigger id="event-category" className="w-full">
@@ -294,6 +309,15 @@ function EventDialogBody({
             ))}
           </SelectContent>
         </Select>
+        <input
+          type="color"
+          value={color}
+          onChange={(e) => setColor(e.target.value)}
+          disabled={readOnly}
+          className="h-8 w-10 shrink-0 cursor-pointer rounded-none border border-input bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label="Цвет события"
+        />
+        </div>
       </div>
 
       {error ? (

@@ -19,7 +19,7 @@ export default async function CalendarPage() {
     supabase
       .from("events")
       .select(
-        "id, owner_id, title, description, starts_at, ends_at, all_day, category_id",
+        "id, owner_id, title, description, starts_at, ends_at, all_day, category_id, color",
       )
       .order("starts_at"),
     supabase

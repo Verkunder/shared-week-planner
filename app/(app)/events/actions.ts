@@ -11,9 +11,12 @@ export type EventInput = {
   ends_at: string;
   all_day: boolean;
   category_id: string | null;
+  color: string | null;
 };
 
 export type EventResult = { error?: string; id?: string } | undefined;
+
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
 function validate(input: Partial<EventInput>): string | null {
   if (input.title !== undefined && !input.title.trim()) {
@@ -25,6 +28,9 @@ function validate(input: Partial<EventInput>): string | null {
     new Date(input.starts_at) >= new Date(input.ends_at)
   ) {
     return "Окончание должно быть позже начала.";
+  }
+  if (input.color !== undefined && input.color !== null && !HEX_COLOR.test(input.color)) {
+    return "Некорректный цвет.";
   }
   return null;
 }
@@ -49,6 +55,7 @@ export async function createEvent(input: EventInput): Promise<EventResult> {
       ends_at: input.ends_at,
       all_day: input.all_day,
       category_id: input.category_id,
+      color: input.color,
     })
     .select("id")
     .single();
@@ -74,6 +81,7 @@ export async function updateEvent(
   if (patch.ends_at !== undefined) update.ends_at = patch.ends_at;
   if (patch.all_day !== undefined) update.all_day = patch.all_day;
   if (patch.category_id !== undefined) update.category_id = patch.category_id;
+  if (patch.color !== undefined) update.color = patch.color;
 
   const { error } = await supabase
     .from("events")
