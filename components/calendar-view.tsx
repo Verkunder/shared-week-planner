@@ -401,7 +401,10 @@ function ViewToolbar({
           Сегодня
         </Button>
       </div>
-      <div className="order-last w-full px-1 text-sm font-medium sm:order-none sm:w-auto sm:flex-1 sm:text-base">
+      <div
+        className="order-last w-full px-1 text-sm font-medium sm:order-0 sm:w-auto sm:flex-1 sm:text-base"
+        suppressHydrationWarning
+      >
         {title}
       </div>
       <div className="ml-auto flex">
