@@ -210,6 +210,11 @@ export function CalendarView({
       ? profilesById.get(dialog.ownerId)?.name ?? ""
       : "";
 
+  const dialogCategories =
+    dialog?.mode === "edit"
+      ? profilesById.get(dialog.ownerId)?.event_categories ?? []
+      : myCategories;
+
   const headerToolbar = isMobile
     ? {
         left: "prev,next",
@@ -255,7 +260,7 @@ export function CalendarView({
       <EventDialog
         state={dialog}
         currentUserId={currentUserId}
-        categories={myCategories}
+        categories={dialogCategories}
         ownerName={editingOwnerName}
         onClose={() => setDialog(null)}
       />
