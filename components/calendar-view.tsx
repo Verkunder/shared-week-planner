@@ -242,6 +242,20 @@ export function CalendarView({
       ? profilesById.get(dialog.ownerId)?.event_categories ?? []
       : myCategories;
 
+  useEffect(() => {
+    if (viewMode === "agenda") return;
+    const api = fcRef.current?.getApi();
+    if (!api) return;
+    const target = fcViewName(viewMode);
+    queueMicrotask(() => {
+      if (api.view.type !== target) {
+        api.changeView(target, anchorDate);
+      } else {
+        api.gotoDate(anchorDate);
+      }
+    });
+  }, [viewMode, anchorDate]);
+
   function shiftAnchor(direction: 1 | -1) {
     const next = new Date(anchorDate);
     if (viewMode === "day") {
@@ -253,21 +267,12 @@ export function CalendarView({
     }
     next.setHours(0, 0, 0, 0);
     setAnchorDate(next);
-    if (viewMode !== "agenda") fcRef.current?.getApi().gotoDate(next);
   }
 
   function goToday() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     setAnchorDate(today);
-    if (viewMode !== "agenda") fcRef.current?.getApi().gotoDate(today);
-  }
-
-  function changeView(mode: ViewMode) {
-    setViewMode(mode);
-    if (mode !== "agenda") {
-      fcRef.current?.getApi().changeView(fcViewName(mode), anchorDate);
-    }
   }
 
   function openEdit(event: EventRow) {
@@ -307,7 +312,7 @@ export function CalendarView({
           mode={viewMode}
           anchor={anchorDate}
           isMobile={isMobile}
-          onMode={changeView}
+          onMode={setViewMode}
           onPrev={() => shiftAnchor(-1)}
           onNext={() => shiftAnchor(1)}
           onToday={goToday}
