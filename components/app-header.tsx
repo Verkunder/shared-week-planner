@@ -26,7 +26,7 @@ export function AppHeader({
   chatUnread: number;
 }) {
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-background px-4 md:h-14 md:gap-4 md:px-6">
+    <header className="flex min-h-12 shrink-0 items-center gap-3 border-b border-border bg-background px-4 pt-[env(safe-area-inset-top)] supports-[padding-top:env(safe-area-inset-top)]:min-h-[calc(3rem+env(safe-area-inset-top))] md:min-h-14 md:gap-4 md:px-6 md:supports-[padding-top:env(safe-area-inset-top)]:min-h-[calc(3.5rem+env(safe-area-inset-top))]">
       <div className="flex shrink-0 items-center gap-1 text-sm font-medium md:gap-1.5 md:text-base">
         <CalendarBlankIcon className="size-4 shrink-0 md:size-5" />
         <span className="hidden truncate sm:inline">Планер</span>
