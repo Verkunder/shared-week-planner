@@ -1,6 +1,6 @@
 "use client";
 
-import { BellIcon, BellSlashIcon } from "@phosphor-icons/react";
+import { BellIcon, BellSlashIcon, ShareFatIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState, useTransition } from "react";
 
 import {
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 type Status =
   | "checking"
   | "unsupported"
+  | "ios-install-required"
   | "default"
   | "granted"
   | "denied";
@@ -68,6 +69,10 @@ export function PushPermission() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (isIosLike() && !isStandalone()) {
+      queueMicrotask(() => setStatus("ios-install-required"));
+      return;
+    }
     const supported =
       "Notification" in window &&
       "serviceWorker" in navigator &&
@@ -113,6 +118,18 @@ export function PushPermission() {
   }
 
   if (status === "checking" || status === "unsupported") return null;
+
+  if (status === "ios-install-required") {
+    return (
+      <div className="flex items-center gap-2 border-b border-border bg-primary/5 px-3 py-2 text-xs text-muted-foreground sm:px-4">
+        <ShareFatIcon className="size-4 shrink-0 text-foreground" />
+        <span>
+          На iPhone пуши включаются только в приложении с экрана Домой:
+          откройте Safari, нажмите «Поделиться», затем «На экран Домой».
+        </span>
+      </div>
+    );
+  }
 
   if (status === "denied") {
     return (
@@ -167,4 +184,21 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
   const out = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
   return out;
+}
+
+function isIosLike(): boolean {
+  const ua = window.navigator.userAgent;
+  const iOSDevice = /iPad|iPhone|iPod/.test(ua);
+  const iPadDesktopMode =
+    window.navigator.platform === "MacIntel" &&
+    window.navigator.maxTouchPoints > 1;
+  return iOSDevice || iPadDesktopMode;
+}
+
+function isStandalone(): boolean {
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    ("standalone" in window.navigator &&
+      Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone))
+  );
 }

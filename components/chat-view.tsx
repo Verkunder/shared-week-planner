@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -24,6 +25,7 @@ import {
   deleteAllMessages,
   deleteMessage,
   deleteThreadForEveryone,
+  getThreadMessages,
   markThreadRead,
   sendMessage,
   type ChatAttachment,
@@ -65,7 +67,7 @@ export function ChatView({
   counterpart: Counterpart;
   initialMessages: ChatMessage[];
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [messages, setMessages] = useSyncedMessages(threadId, initialMessages);
   const [text, setText] = useState("");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string>();
@@ -76,6 +78,11 @@ export function ChatView({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
   const router = useRouter();
+
+  const refreshMessages = useCallback(async () => {
+    const result = await getThreadMessages(threadId);
+    if (result.messages) setMessages(result.messages);
+  }, [threadId, setMessages]);
 
   function setFilePreview(file: File | null) {
     if (previewUrlRef.current) {
@@ -95,32 +102,13 @@ export function ChatView({
   }, []);
 
   useEffect(() => {
-    void markThreadRead(threadId).then(() => router.refresh());
-  }, [threadId, router]);
+    void markThreadRead(threadId);
+  }, [threadId]);
 
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
       .channel(`chat:${threadId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "chat_messages",
-          filter: `thread_id=eq.${threadId}`,
-        },
-        (payload) => {
-          const msg = payload.new as ChatMessage;
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            return [...prev, msg];
-          });
-          if (msg.sender_id !== currentUserId) {
-            void markThreadRead(threadId).then(() => router.refresh());
-          }
-        },
-      )
       .on(
         "postgres_changes",
         {
@@ -138,16 +126,38 @@ export function ChatView({
             return;
           }
           const msg = payload.new as ChatMessage | undefined;
-          if (msg?.deleted_at) {
+          if (!msg) return;
+          if (msg.deleted_at) {
             setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+            return;
           }
+          setMessages((prev) => upsertMessage(prev, msg));
+          if (payload.eventType === "INSERT" && msg.sender_id !== currentUserId) {
+            void markThreadRead(threadId);
+          }
+          void refreshMessages();
         },
       )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [threadId, currentUserId, router]);
+  }, [threadId, currentUserId, setMessages, refreshMessages]);
+
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") void refreshMessages();
+    };
+
+    const interval = window.setInterval(refreshIfVisible, 4000);
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
+  }, [refreshMessages]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -207,7 +217,9 @@ export function ChatView({
         setError(result.error);
         setText(trimmed);
         setFilePreview(file);
+        return;
       }
+      await refreshMessages();
     });
   }
 
@@ -227,6 +239,7 @@ export function ChatView({
         { type: "sticker", emoji },
       ]);
       if (result?.error) setError(result.error);
+      else await refreshMessages();
     });
   }
 
@@ -467,6 +480,22 @@ export function ChatView({
   );
 }
 
+function useSyncedMessages(threadId: string, initialMessages: ChatMessage[]) {
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (active) setMessages(initialMessages);
+    });
+    return () => {
+      active = false;
+    };
+  }, [threadId, initialMessages]);
+
+  return [messages, setMessages] as const;
+}
+
 function MessageBubble({
   message,
   fromSelf,
@@ -614,6 +643,14 @@ function ImageAttachment({ path }: { path: string }) {
       />
     </a>
   );
+}
+
+function upsertMessage(messages: ChatMessage[], message: ChatMessage): ChatMessage[] {
+  const next = messages.some((m) => m.id === message.id)
+    ? messages.map((m) => (m.id === message.id ? message : m))
+    : [...messages, message];
+
+  return next.sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
 function mimeToExt(mime: string): string {

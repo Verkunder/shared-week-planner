@@ -13,12 +13,57 @@ export type ChatAttachment =
   | { type: "image"; path: string; width?: number; height?: number }
   | { type: "sticker"; emoji: string };
 
+export type ChatMessageRow = {
+  id: string;
+  sender_id: string;
+  text: string | null;
+  created_at: string;
+  deleted_at?: string | null;
+  attachments: ChatAttachment[];
+};
+
 export type ChatActionResult =
   | { error?: string; thread_id?: string }
   | undefined;
 
 const MESSAGE_MAX_LENGTH = 4000;
 const ATTACHMENTS_MAX = 4;
+
+export async function getThreadMessages(
+  threadId: string,
+): Promise<{ messages?: ChatMessageRow[]; error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "РќРµ Р°РІС‚РѕСЂРёР·РѕРІР°РЅ." };
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("chat_thread_members")
+    .select("cleared_at")
+    .eq("thread_id", threadId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (membershipError) return { error: membershipError.message };
+  if (!membership) return { error: "Р§Р°С‚ РЅРµ РЅР°Р№РґРµРЅ." };
+
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .select("id, sender_id, text, created_at, deleted_at, attachments")
+    .eq("thread_id", threadId)
+    .is("deleted_at", null)
+    .gt("created_at", membership.cleared_at ?? "epoch")
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: true });
+  if (error) return { error: error.message };
+
+  const messages = ((data as ChatMessageRow[] | null) ?? []).map((m) => ({
+    ...m,
+    attachments: m.attachments ?? [],
+  }));
+
+  return { messages };
+}
 
 export async function getOrCreateDmThread(
   otherUserId: string,
@@ -130,6 +175,12 @@ async function notifyRecipients(
 
     if (!subs || subs.length === 0) return;
 
+    const uniqueSubs = Array.from(
+      new Map(
+        (subs as StoredSubscription[]).map((sub) => [sub.endpoint, sub]),
+      ).values(),
+    );
+
     const payload: PushPayload = {
       title:
         (senderProfile as { name: string | null } | null)?.name ??
@@ -140,7 +191,7 @@ async function notifyRecipients(
     };
 
     await Promise.allSettled(
-      (subs as StoredSubscription[]).map(async (sub) => {
+      uniqueSubs.map(async (sub) => {
         const result = await sendPushTo(sub, payload);
         if (result.gone) {
           await supabase
@@ -191,7 +242,22 @@ export async function savePushSubscription(input: {
       .upsert(row, { onConflict: "endpoint" });
     if (fallbackError) return { error: fallbackError.message };
   }
+  await cleanupCurrentBrowserSubscriptions(supabase, input.endpoint, input.user_agent);
   return undefined;
+}
+
+async function cleanupCurrentBrowserSubscriptions(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  endpoint: string,
+  userAgent?: string,
+): Promise<void> {
+  if (!userAgent) return;
+  const { error } = await supabase
+    .from("push_subscriptions")
+    .delete()
+    .eq("user_agent", userAgent)
+    .neq("endpoint", endpoint);
+  if (error) console.warn("push subscription cleanup failed:", error);
 }
 
 export async function removePushSubscription(
