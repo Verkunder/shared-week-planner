@@ -19,6 +19,7 @@ import {
 import { MovieDialog } from "@/components/movie-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { proxiedImageSrc } from "@/lib/image-proxy";
 
 export type MoviesViewProfile = {
   id: string;
@@ -432,7 +433,7 @@ function MovieGridCard({
         {poster ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={poster}
+            src={proxiedImageSrc(poster)}
             alt={movie.title}
             className="size-full object-cover transition-transform group-hover:scale-[1.02]"
             loading="lazy"

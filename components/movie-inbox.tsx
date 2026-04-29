@@ -18,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { proxiedImageSrc } from "@/lib/image-proxy";
 import { createClient } from "@/lib/supabase/client";
 import { initials } from "@/lib/user";
 
@@ -118,7 +119,7 @@ function SuggestionRow({ suggestion }: { suggestion: IncomingSuggestion }) {
         {poster ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={poster}
+            src={proxiedImageSrc(poster)}
             alt=""
             className="h-24 w-16 object-cover ring-1 ring-foreground/10"
           />

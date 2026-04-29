@@ -34,6 +34,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
+import { proxiedImageSrc } from "@/lib/image-proxy";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/user";
 
@@ -301,7 +302,7 @@ export function CalendarView({
         {avatar ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={avatar}
+            src={proxiedImageSrc(avatar)}
             alt=""
             className="size-5 shrink-0 rounded-full object-cover ring-1 ring-white/40"
           />
@@ -636,7 +637,7 @@ function AgendaView({
                         {profile?.avatar_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={profile.avatar_url}
+                            src={proxiedImageSrc(profile.avatar_url)}
                             alt=""
                             className="size-6 shrink-0 rounded-full object-cover"
                           />

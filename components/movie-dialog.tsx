@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { proxiedImageSrc } from "@/lib/image-proxy";
 import { initials } from "@/lib/user";
 
 type Mode = "view" | "self" | "propose";
@@ -160,7 +161,7 @@ function MovieDialogBody({
           {poster ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={poster}
+              src={proxiedImageSrc(poster)}
               alt=""
               className="h-40 w-28 object-cover ring-1 ring-foreground/10"
             />
