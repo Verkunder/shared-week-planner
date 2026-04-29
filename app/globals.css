@@ -132,9 +132,14 @@
   input[type="date"],
   input[type="datetime-local"],
   input[type="time"] {
+    -webkit-appearance: none;
+    appearance: none;
     box-sizing: border-box;
+    display: block;
+    inline-size: 100%;
     max-width: 100%;
     min-width: 0;
+    min-inline-size: 0;
   }
 
   .fc .fc-col-header-cell-cushion {

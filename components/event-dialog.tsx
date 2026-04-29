@@ -77,7 +77,7 @@ export function EventDialog({
         if (!o) onClose();
       }}
     >
-      <DialogContent className="max-w-[calc(100%-0.75rem)] p-3 sm:max-w-md sm:p-4">
+      <DialogContent className="max-w-[calc(100%-0.75rem)] overflow-x-hidden p-3 sm:max-w-md sm:p-4">
         {state ? (
           <EventDialogBody
             key={state.mode === "edit" ? state.id : "create"}
@@ -321,7 +321,7 @@ function EventDialogBody({
             onChange={(e) => setStartInput(e.target.value)}
             required
             disabled={readOnly}
-            className="max-w-full"
+            className="w-full min-w-0 max-w-full appearance-none overflow-hidden"
           />
         </div>
         <div className="grid min-w-0 gap-1.5">
@@ -333,7 +333,7 @@ function EventDialogBody({
             onChange={(e) => setEndInput(e.target.value)}
             required
             disabled={readOnly}
-            className="max-w-full"
+            className="w-full min-w-0 max-w-full appearance-none overflow-hidden"
           />
         </div>
       </div>
