@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { type EventCategory } from "@/app/(app)/profile/actions";
 import { AppHeader } from "@/components/app-header";
+import { IosInstallPrompt } from "@/components/ios-install-prompt";
 import type { IncomingSuggestion } from "@/components/movie-inbox";
 import { createClient } from "@/lib/supabase/server";
 import type { SessionUser } from "@/lib/user";
@@ -110,6 +111,7 @@ export default async function AppLayout({
         chatUnread={chatUnread}
       />
       <main className="flex-1 overflow-hidden">{children}</main>
+      <IosInstallPrompt />
     </div>
   );
 }
