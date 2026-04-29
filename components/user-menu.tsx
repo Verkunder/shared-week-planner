@@ -34,7 +34,7 @@ export function UserMenu({
           aria-label="Меню пользователя"
           className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <Avatar size="sm">
+          <Avatar size="sm" className="md:data-[size=sm]:size-8">
             {user.avatarUrl ? (
               <AvatarImage src={user.avatarUrl} alt={user.name} />
             ) : null}

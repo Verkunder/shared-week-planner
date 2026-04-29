@@ -34,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { initials, type SessionUser } from "@/lib/user";
 
@@ -79,7 +80,7 @@ export type ProfileTab = "profile" | "settings";
 
 const DEFAULT_CATEGORIES: EventCategory[] = [
   { id: "work", label: "Работа", color: "#3b82f6" },
-  { id: "personal", label: "Личное", color: "#10b981" },
+  { id: "personal", label: "Личное", color: "#10b981", is_personal: true },
   { id: "sport", label: "Спорт", color: "#f97316" },
 ];
 
@@ -265,6 +266,10 @@ function SettingsTabPanel({
       <ThemeRow />
       <div className="grid gap-2">
         <Label>Категории событий</Label>
+        <p className="text-[11px] text-muted-foreground">
+          Отметьте категорию как «личное время», чтобы предложения фильмов
+          планировались только в эти часы.
+        </p>
         <div className="grid gap-2">
           {items.map((cat) => (
             <div key={cat.id} className="flex items-center gap-2">
@@ -280,6 +285,19 @@ function SettingsTabPanel({
                 onChange={(e) => update(cat.id, { label: e.target.value })}
                 placeholder="Название"
               />
+              <label
+                className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground"
+                title="Использовать как личное время"
+              >
+                <Switch
+                  size="sm"
+                  checked={!!cat.is_personal}
+                  onCheckedChange={(v) =>
+                    update(cat.id, { is_personal: v })
+                  }
+                />
+                <span>Личное</span>
+              </label>
               <Button
                 type="button"
                 variant="ghost"

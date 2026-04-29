@@ -8,6 +8,7 @@ export type EventCategory = {
   id: string;
   label: string;
   color: string;
+  is_personal?: boolean;
 };
 
 export type ProfileResult = { error?: string } | undefined;
@@ -79,6 +80,13 @@ export async function updateEventCategories(
     }
   }
 
+  const sanitized: EventCategory[] = categories.map((c) => ({
+    id: c.id,
+    label: c.label.trim(),
+    color: c.color,
+    ...(c.is_personal ? { is_personal: true } : {}),
+  }));
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -88,7 +96,7 @@ export async function updateEventCategories(
   const { error } = await supabase
     .from("profiles")
     .upsert(
-      { id: user.id, event_categories: categories },
+      { id: user.id, event_categories: sanitized },
       { onConflict: "id" },
     );
 
