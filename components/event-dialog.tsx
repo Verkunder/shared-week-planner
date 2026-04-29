@@ -1,11 +1,12 @@
 "use client";
 
-import { TrashIcon } from "@phosphor-icons/react";
+import { CopyIcon, TrashIcon } from "@phosphor-icons/react";
 import { useState, useTransition } from "react";
 
 import {
   createEvent,
   deleteEvent,
+  duplicateEventToDays,
   updateEvent,
 } from "@/app/(app)/events/actions";
 import { type EventCategory } from "@/app/(app)/profile/actions";
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 const NO_CATEGORY = "__none__";
 
@@ -128,6 +130,8 @@ function EventDialogBody({
   );
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string>();
+  const [copyMode, setCopyMode] = useState(false);
+  const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
 
   function handleCategoryChange(next: string) {
     setCategoryId(next);
@@ -178,6 +182,86 @@ function EventDialogBody({
       if (result?.error) setError(result.error);
       else onClose();
     });
+  }
+
+  function toggleDay(key: string) {
+    setSelectedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function exitCopyMode() {
+    setCopyMode(false);
+    setSelectedDays(new Set());
+    setError(undefined);
+  }
+
+  function handleConfirmCopy() {
+    if (!isEdit || !isOwner) return;
+    if (selectedDays.size === 0) return;
+    setError(undefined);
+    const targets = computeCopyTargets(
+      { starts_at: state.starts_at, ends_at: state.ends_at, all_day: state.all_day },
+      Array.from(selectedDays),
+    );
+    startTransition(async () => {
+      const result = await duplicateEventToDays(state.id, targets);
+      if (result?.error) setError(result.error);
+      else onClose();
+    });
+  }
+
+  if (isEdit && copyMode) {
+    return (
+      <div className="grid gap-4">
+        <DialogHeader>
+          <DialogTitle>Скопировать в другие дни</DialogTitle>
+          <DialogDescription>
+            Выберите дни — в каждый из них будет создана копия события с тем же
+            временем.
+          </DialogDescription>
+        </DialogHeader>
+
+        <MultiDayPicker
+          anchor={new Date(state.starts_at)}
+          selected={selectedDays}
+          onToggle={toggleDay}
+        />
+
+        {error ? (
+          <p role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="flex justify-between gap-2 pt-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={exitCopyMode}
+            disabled={pending}
+            className="h-11 text-sm sm:h-8 sm:text-xs"
+          >
+            Назад
+          </Button>
+          <Button
+            type="button"
+            onClick={handleConfirmCopy}
+            disabled={pending || selectedDays.size === 0}
+            className="h-11 text-sm sm:h-8 sm:text-xs"
+          >
+            {pending
+              ? "Копируем…"
+              : selectedDays.size === 0
+                ? "Скопировать"
+                : `Скопировать (${selectedDays.size})`}
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -326,17 +410,28 @@ function EventDialogBody({
         </p>
       ) : null}
 
-      <div className="flex items-center justify-between gap-2 pt-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
         {isEdit && isOwner ? (
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            onClick={handleDelete}
-            disabled={pending}
-          >
-            <TrashIcon /> Удалить
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={handleDelete}
+              disabled={pending}
+            >
+              <TrashIcon /> Удалить
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setCopyMode(true)}
+              disabled={pending}
+            >
+              <CopyIcon /> Скопировать в…
+            </Button>
+          </div>
         ) : (
           <span />
         )}
@@ -390,4 +485,123 @@ function parseFromInput(
     return d.toISOString();
   }
   return new Date(value).toISOString();
+}
+
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function computeCopyTargets(
+  source: { starts_at: string; ends_at: string; all_day: boolean },
+  targetKeys: string[],
+): { starts_at: string; ends_at: string; all_day: boolean }[] {
+  const origStart = new Date(source.starts_at);
+  const duration =
+    new Date(source.ends_at).getTime() - origStart.getTime();
+  return targetKeys.map((key) => {
+    const [y, m, d] = key.split("-").map(Number);
+    if (source.all_day) {
+      const start = new Date(y, m - 1, d, 0, 0, 0, 0);
+      const end = new Date(y, m - 1, d + 1, 0, 0, 0, 0);
+      return {
+        starts_at: start.toISOString(),
+        ends_at: end.toISOString(),
+        all_day: true,
+      };
+    }
+    const start = new Date(
+      y,
+      m - 1,
+      d,
+      origStart.getHours(),
+      origStart.getMinutes(),
+      0,
+      0,
+    );
+    const end = new Date(start.getTime() + duration);
+    return {
+      starts_at: start.toISOString(),
+      ends_at: end.toISOString(),
+      all_day: false,
+    };
+  });
+}
+
+const WEEKDAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+const PICKER_WEEKS = 6;
+
+function MultiDayPicker({
+  anchor,
+  selected,
+  onToggle,
+}: {
+  anchor: Date;
+  selected: Set<string>;
+  onToggle: (key: string) => void;
+}) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const start = new Date(anchor);
+  start.setHours(0, 0, 0, 0);
+  if (start < today) start.setTime(today.getTime());
+  const dayOfWeek = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - dayOfWeek);
+
+  const days: Date[] = [];
+  for (let i = 0; i < PICKER_WEEKS * 7; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    days.push(d);
+  }
+
+  const sourceKey = dayKey(anchor);
+  const monthFmt = new Intl.DateTimeFormat("ru-RU", {
+    month: "long",
+    year: "numeric",
+  });
+  const rangeLabel = `${capitalizeFirst(monthFmt.format(days[0]))} — ${capitalizeFirst(monthFmt.format(days[days.length - 1]))}`;
+
+  return (
+    <div className="grid gap-2">
+      <div className="text-[11px] text-muted-foreground">{rangeLabel}</div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
+        {WEEKDAY_LABELS.map((w) => (
+          <div key={w}>{w}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {days.map((d) => {
+          const key = dayKey(d);
+          const isSelected = selected.has(key);
+          const isPast = d < today;
+          const isSource = key === sourceKey;
+          const disabled = isPast || isSource;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => !disabled && onToggle(key)}
+              disabled={disabled}
+              aria-pressed={isSelected}
+              className={cn(
+                "grid aspect-square place-items-center rounded-none border text-xs transition-colors",
+                isSelected
+                  ? "border-primary bg-primary/15 text-foreground"
+                  : "border-border bg-background hover:bg-muted",
+                disabled && "cursor-not-allowed opacity-40 hover:bg-background",
+                isSource && "ring-1 ring-foreground/30",
+              )}
+            >
+              {d.getDate()}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function capitalizeFirst(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }

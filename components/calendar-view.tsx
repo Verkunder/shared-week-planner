@@ -19,13 +19,20 @@ import { CaretLeftIcon, CaretRightIcon, PlusIcon } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { updateEvent } from "@/app/(app)/events/actions";
+import { duplicateEvent, updateEvent } from "@/app/(app)/events/actions";
 import { type EventCategory } from "@/app/(app)/profile/actions";
 import {
   EventDialog,
   type EventDialogState,
 } from "@/components/event-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/user";
@@ -55,6 +62,13 @@ const DEFAULT_AGENDA_HOUR = 12;
 
 type ViewMode = "day" | "week" | "month" | "agenda";
 
+type DropChoice = {
+  eventId: string;
+  starts_at: string;
+  ends_at: string;
+  all_day: boolean;
+};
+
 function fcViewName(mode: Exclude<ViewMode, "agenda">): string {
   if (mode === "day") return "timeGridDay";
   if (mode === "week") return "timeGridWeek";
@@ -71,6 +85,7 @@ export function CalendarView({
   profiles: ProfileRow[];
 }) {
   const [dialog, setDialog] = useState<EventDialogState | null>(null);
+  const [dropChoice, setDropChoice] = useState<DropChoice | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [anchorDate, setAnchorDate] = useState<Date>(() => {
@@ -180,7 +195,7 @@ export function CalendarView({
     });
   }
 
-  async function handleEventChange(arg: EventDropArg | EventResizeDoneArg) {
+  async function handleEventResize(arg: EventResizeDoneArg) {
     const e = events.find((ev) => ev.id === arg.event.id);
     if (!e || e.owner_id !== currentUserId) {
       arg.revert();
@@ -199,6 +214,80 @@ export function CalendarView({
       all_day: arg.event.allDay,
     });
     if (result?.error) arg.revert();
+  }
+
+  async function handleEventDrop(arg: EventDropArg) {
+    const e = events.find((ev) => ev.id === arg.event.id);
+    if (!e || e.owner_id !== currentUserId) {
+      arg.revert();
+      return;
+    }
+    const start = arg.event.start;
+    if (!start) {
+      arg.revert();
+      return;
+    }
+    const end =
+      arg.event.end ?? new Date(start.getTime() + DEFAULT_DURATION_MS);
+    const newStart = start.toISOString();
+    const newEnd = end.toISOString();
+    const newAllDay = arg.event.allDay;
+
+    const altHeld = arg.jsEvent instanceof MouseEvent && arg.jsEvent.altKey;
+    const dayChanged = !sameLocalDay(new Date(e.starts_at), start);
+
+    if (altHeld) {
+      arg.revert();
+      const result = await duplicateEvent(e.id, {
+        starts_at: newStart,
+        ends_at: newEnd,
+        all_day: newAllDay,
+      });
+      if (result?.error) console.error(result.error);
+      return;
+    }
+
+    if (!dayChanged) {
+      const result = await updateEvent(e.id, {
+        starts_at: newStart,
+        ends_at: newEnd,
+        all_day: newAllDay,
+      });
+      if (result?.error) arg.revert();
+      return;
+    }
+
+    arg.revert();
+    setDropChoice({
+      eventId: e.id,
+      starts_at: newStart,
+      ends_at: newEnd,
+      all_day: newAllDay,
+    });
+  }
+
+  async function confirmDropMove() {
+    if (!dropChoice) return;
+    const choice = dropChoice;
+    setDropChoice(null);
+    const result = await updateEvent(choice.eventId, {
+      starts_at: choice.starts_at,
+      ends_at: choice.ends_at,
+      all_day: choice.all_day,
+    });
+    if (result?.error) console.error(result.error);
+  }
+
+  async function confirmDropCopy() {
+    if (!dropChoice) return;
+    const choice = dropChoice;
+    setDropChoice(null);
+    const result = await duplicateEvent(choice.eventId, {
+      starts_at: choice.starts_at,
+      ends_at: choice.ends_at,
+      all_day: choice.all_day,
+    });
+    if (result?.error) console.error(result.error);
   }
 
   function renderEventContent(arg: EventContentArg) {
@@ -317,6 +406,12 @@ export function CalendarView({
           onNext={() => shiftAnchor(1)}
           onToday={goToday}
         />
+        {!isMobile ? (
+          <p className="shrink-0 border-b border-border px-4 py-1 text-[11px] text-muted-foreground">
+            Перетащите событие на другой день, чтобы перенести. Удерживайте
+            Alt — чтобы скопировать.
+          </p>
+        ) : null}
         <div className={cn("flex-1 overflow-hidden", showAgenda ? "" : "p-2 sm:p-4")}>
           <div className={cn("h-full", showAgenda ? "hidden" : "block")}>
             <FullCalendar
@@ -333,8 +428,8 @@ export function CalendarView({
               select={handleSelect}
               dateClick={handleDateClick}
               eventClick={handleEventClick}
-              eventDrop={handleEventChange}
-              eventResize={handleEventChange}
+              eventDrop={handleEventDrop}
+              eventResize={handleEventResize}
               eventContent={renderEventContent}
               slotMinTime="07:00:00"
               slotMaxTime="24:00:00"
@@ -360,6 +455,38 @@ export function CalendarView({
         ownerName={editingOwnerName}
         onClose={() => setDialog(null)}
       />
+      <Dialog
+        open={dropChoice !== null}
+        onOpenChange={(o) => {
+          if (!o) setDropChoice(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Перенести или скопировать?</DialogTitle>
+            <DialogDescription>
+              Совет: удерживайте Alt при перетаскивании, чтобы сразу копировать.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={confirmDropMove}
+              className="h-11 flex-1 text-sm sm:h-8 sm:text-xs"
+            >
+              Перенести
+            </Button>
+            <Button
+              type="button"
+              onClick={confirmDropCopy}
+              className="h-11 flex-1 text-sm sm:h-8 sm:text-xs"
+            >
+              Скопировать
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -632,4 +759,12 @@ function dateKey(d: Date): string {
 
 function capitalize(s: string): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+function sameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }

@@ -102,3 +102,95 @@ export async function deleteEvent(id: string): Promise<EventResult> {
   revalidatePath("/");
   return undefined;
 }
+
+export async function duplicateEventToDays(
+  sourceId: string,
+  targets: { starts_at: string; ends_at: string; all_day: boolean }[],
+): Promise<EventResult> {
+  if (targets.length === 0) return undefined;
+  for (const t of targets) {
+    if (new Date(t.starts_at) >= new Date(t.ends_at)) {
+      return { error: "Окончание должно быть позже начала." };
+    }
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Не авторизован." };
+
+  const { data: src, error: srcErr } = await supabase
+    .from("events")
+    .select("title, description, category_id, color")
+    .eq("id", sourceId)
+    .eq("owner_id", user.id)
+    .single();
+
+  if (srcErr || !src) {
+    return { error: srcErr?.message ?? "Событие не найдено." };
+  }
+
+  const rows = targets.map((t) => ({
+    owner_id: user.id,
+    title: src.title,
+    description: src.description,
+    starts_at: t.starts_at,
+    ends_at: t.ends_at,
+    all_day: t.all_day,
+    category_id: src.category_id,
+    color: src.color,
+  }));
+
+  const { error } = await supabase.from("events").insert(rows);
+  if (error) return { error: error.message };
+
+  revalidatePath("/");
+  return undefined;
+}
+
+export async function duplicateEvent(
+  sourceId: string,
+  overrides: { starts_at: string; ends_at: string; all_day: boolean },
+): Promise<EventResult> {
+  if (new Date(overrides.starts_at) >= new Date(overrides.ends_at)) {
+    return { error: "Окончание должно быть позже начала." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Не авторизован." };
+
+  const { data: src, error: srcErr } = await supabase
+    .from("events")
+    .select("title, description, category_id, color")
+    .eq("id", sourceId)
+    .eq("owner_id", user.id)
+    .single();
+
+  if (srcErr || !src) {
+    return { error: srcErr?.message ?? "Событие не найдено." };
+  }
+
+  const { data, error } = await supabase
+    .from("events")
+    .insert({
+      owner_id: user.id,
+      title: src.title,
+      description: src.description,
+      starts_at: overrides.starts_at,
+      ends_at: overrides.ends_at,
+      all_day: overrides.all_day,
+      category_id: src.category_id,
+      color: src.color,
+    })
+    .select("id")
+    .single();
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/");
+  return { id: data.id };
+}
