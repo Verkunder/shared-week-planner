@@ -1,6 +1,11 @@
-import { CalendarBlankIcon, FilmReelIcon } from "@phosphor-icons/react/ssr";
+import {
+  CalendarBlankIcon,
+  ChatCircleIcon,
+  FilmReelIcon,
+} from "@phosphor-icons/react/ssr";
 
 import { type EventCategory } from "@/app/(app)/profile/actions";
+import { ChatUnreadBadge } from "@/components/chat-unread-badge";
 import { HeaderNavLink } from "@/components/header-nav-link";
 import {
   MovieInbox,
@@ -13,10 +18,12 @@ export function AppHeader({
   user,
   categories,
   incoming,
+  chatUnread,
 }: {
   user: SessionUser;
   categories: EventCategory[];
   incoming: IncomingSuggestion[];
+  chatUnread: number;
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-background px-4 md:h-14 md:gap-4 md:px-6">
@@ -32,6 +39,11 @@ export function AppHeader({
         <HeaderNavLink href="/movies">
           <FilmReelIcon className="size-3.5 md:size-4" />
           <span>Фильмы</span>
+        </HeaderNavLink>
+        <HeaderNavLink href="/chat">
+          <ChatCircleIcon className="size-3.5 md:size-4" />
+          <span>Чат</span>
+          <ChatUnreadBadge count={chatUnread} currentUserId={user.id} />
         </HeaderNavLink>
       </nav>
       <div className="ml-auto flex items-center gap-2 md:gap-3">

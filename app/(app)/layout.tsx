@@ -37,20 +37,25 @@ export default async function AppLayout({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: profile }, { data: rawSuggestions }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("name, avatar_url, event_categories")
-      .eq("id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("movie_suggestions")
-      .select(
-        "id, from_user, title, poster_url, overview, proposed_starts_at, proposed_ends_at, release_year, vote_average, runtime_minutes, responses",
-      )
-      .contains("recipients", [user.id])
-      .eq("status", "pending"),
-  ]);
+  const [{ data: profile }, { data: rawSuggestions }, { data: chatUnreadRaw }] =
+    await Promise.all([
+      supabase
+        .from("profiles")
+        .select("name, avatar_url, event_categories")
+        .eq("id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("movie_suggestions")
+        .select(
+          "id, from_user, title, poster_url, overview, proposed_starts_at, proposed_ends_at, release_year, vote_average, runtime_minutes, responses",
+        )
+        .contains("recipients", [user.id])
+        .eq("status", "pending"),
+      supabase.rpc("chat_unread_count"),
+    ]);
+
+  const chatUnread =
+    typeof chatUnreadRaw === "number" ? chatUnreadRaw : 0;
 
   const sessionUser: SessionUser = {
     id: user.id,
@@ -102,6 +107,7 @@ export default async function AppLayout({
         user={sessionUser}
         categories={categories}
         incoming={incoming}
+        chatUnread={chatUnread}
       />
       <main className="flex-1 overflow-hidden">{children}</main>
     </div>
