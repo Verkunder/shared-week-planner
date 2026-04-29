@@ -1,7 +1,7 @@
 "use client";
 
 import { BellIcon, BellSlashIcon } from "@phosphor-icons/react";
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 
 import {
   removePushSubscription,
@@ -21,56 +21,74 @@ export function PushPermission() {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string>();
 
+  const syncSubscription = useCallback(
+    async (requestPermission: boolean): Promise<Status | undefined> => {
+      const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!publicKey) {
+        setError("Уведомления не настроены на сервере.");
+        return undefined;
+      }
+
+      let reg = await navigator.serviceWorker.getRegistration("/sw.js");
+      if (!reg) {
+        reg = await navigator.serviceWorker.register("/sw.js");
+      }
+      await navigator.serviceWorker.ready;
+
+      const permission = requestPermission
+        ? await Notification.requestPermission()
+        : Notification.permission;
+      if (permission !== "granted") return permission as Status;
+
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
+        });
+      }
+
+      const json = sub.toJSON();
+      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+        setError("Не удалось получить подписку.");
+        return permission as Status;
+      }
+
+      const result = await savePushSubscription({
+        endpoint: json.endpoint,
+        p256dh: json.keys.p256dh,
+        auth: json.keys.auth,
+        user_agent: navigator.userAgent,
+      });
+      if (result?.error) setError(result.error);
+      return permission as Status;
+    },
+    [],
+  );
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const supported =
       "Notification" in window &&
       "serviceWorker" in navigator &&
       "PushManager" in window;
-    if (!supported) {
-      setStatus("unsupported");
-      return;
-    }
-    setStatus(Notification.permission as Status);
+    const nextStatus = supported
+      ? (Notification.permission as Status)
+      : "unsupported";
+    queueMicrotask(() => setStatus(nextStatus));
   }, []);
+
+  useEffect(() => {
+    if (status !== "granted") return;
+    queueMicrotask(() => void syncSubscription(false));
+  }, [status, syncSubscription]);
 
   function enable() {
     setError(undefined);
     startTransition(async () => {
       try {
-        const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-        if (!publicKey) {
-          setError("Уведомления не настроены на сервере.");
-          return;
-        }
-
-        let reg = await navigator.serviceWorker.getRegistration("/sw.js");
-        if (!reg) {
-          reg = await navigator.serviceWorker.register("/sw.js");
-        }
-        await navigator.serviceWorker.ready;
-
-        const permission = await Notification.requestPermission();
-        setStatus(permission as Status);
-        if (permission !== "granted") return;
-
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
-        });
-
-        const json = sub.toJSON();
-        if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
-          setError("Не удалось получить подписку.");
-          return;
-        }
-        const result = await savePushSubscription({
-          endpoint: json.endpoint,
-          p256dh: json.keys.p256dh,
-          auth: json.keys.auth,
-          user_agent: navigator.userAgent,
-        });
-        if (result?.error) setError(result.error);
+        const permission = await syncSubscription(true);
+        if (permission) setStatus(permission);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Не удалось подписаться.");
       }
@@ -100,8 +118,8 @@ export function PushPermission() {
     return (
       <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground sm:px-4">
         <BellSlashIcon className="size-4 shrink-0" />
-        Уведомления заблокированы в настройках браузера. Разрешите их там, чтобы
-        получать пуши.
+        Уведомления заблокированы в настройках браузера. Разрешите их там,
+        чтобы получать пуши.
       </div>
     );
   }
@@ -121,9 +139,7 @@ export function PushPermission() {
         >
           Отключить
         </Button>
-        {error ? (
-          <span className="text-destructive">{error}</span>
-        ) : null}
+        {error ? <span className="text-destructive">{error}</span> : null}
       </div>
     );
   }
@@ -135,16 +151,9 @@ export function PushPermission() {
         Включите уведомления, чтобы не пропустить сообщения.
       </span>
       <div className="flex items-center gap-2">
-        {error ? (
-          <span className="text-destructive">{error}</span>
-        ) : null}
-        <Button
-          type="button"
-          size="sm"
-          onClick={enable}
-          disabled={pending}
-        >
-          {pending ? "Подключаем…" : "Включить"}
+        {error ? <span className="text-destructive">{error}</span> : null}
+        <Button type="button" size="sm" onClick={enable} disabled={pending}>
+          {pending ? "Подключаем..." : "Включить"}
         </Button>
       </div>
     </div>

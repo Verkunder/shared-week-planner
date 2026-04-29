@@ -77,10 +77,11 @@ export async function sendMessage(
   });
   if (error) return { error: error.message };
 
-  void notifyRecipients(supabase, threadId, user.id, trimmed, attachments);
+  await notifyRecipients(supabase, threadId, user.id, trimmed, attachments);
 
   revalidatePath(`/chat/${threadId}`);
   revalidatePath("/chat");
+  revalidatePath("/(app)", "layout");
   return undefined;
 }
 
@@ -110,17 +111,22 @@ async function notifyRecipients(
     );
     if (recipientIds.length === 0) return;
 
-    const [{ data: senderProfile }, { data: subs }] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("name")
-        .eq("id", senderId)
-        .maybeSingle(),
-      supabase
-        .from("push_subscriptions")
-        .select("endpoint, p256dh, auth")
-        .in("user_id", recipientIds),
-    ]);
+    const [{ data: senderProfile }, { data: subs, error: subsError }] =
+      await Promise.all([
+        supabase
+          .from("profiles")
+          .select("name")
+          .eq("id", senderId)
+          .maybeSingle(),
+        supabase.rpc("push_subscriptions_for_thread", {
+          target_thread_id: threadId,
+        }),
+      ]);
+
+    if (subsError) {
+      console.error("push subscription lookup failed:", subsError);
+      return;
+    }
 
     if (!subs || subs.length === 0) return;
 
@@ -164,17 +170,27 @@ export async function savePushSubscription(input: {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Не авторизован." };
 
-  const { error } = await supabase.from("push_subscriptions").upsert(
-    {
-      user_id: user.id,
-      endpoint: input.endpoint,
-      p256dh: input.p256dh,
-      auth: input.auth,
-      user_agent: input.user_agent ?? null,
-    },
-    { onConflict: "endpoint" },
-  );
-  if (error) return { error: error.message };
+  const row = {
+    user_id: user.id,
+    endpoint: input.endpoint,
+    p256dh: input.p256dh,
+    auth: input.auth,
+    user_agent: input.user_agent ?? null,
+  };
+
+  const { error } = await supabase.rpc("upsert_push_subscription", {
+    sub_endpoint: input.endpoint,
+    sub_p256dh: input.p256dh,
+    sub_auth: input.auth,
+    sub_user_agent: input.user_agent ?? null,
+  });
+  if (error) {
+    console.warn("upsert_push_subscription RPC failed, falling back:", error);
+    const { error: fallbackError } = await supabase
+      .from("push_subscriptions")
+      .upsert(row, { onConflict: "endpoint" });
+    if (fallbackError) return { error: fallbackError.message };
+  }
   return undefined;
 }
 
@@ -214,5 +230,84 @@ export async function markThreadRead(
   if (error) return { error: error.message };
 
   revalidatePath("/chat");
+  revalidatePath("/(app)", "layout");
+  return undefined;
+}
+
+export async function deleteMessage(
+  messageId: string,
+  threadId: string,
+): Promise<ChatActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Не авторизован." };
+
+  const { error } = await supabase.rpc("delete_chat_message", {
+    target_message_id: messageId,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath(`/chat/${threadId}`);
+  revalidatePath("/chat");
+  revalidatePath("/(app)", "layout");
+  return undefined;
+}
+
+export async function clearThread(threadId: string): Promise<ChatActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Не авторизован." };
+
+  const { error } = await supabase.rpc("clear_chat_thread", {
+    target_thread_id: threadId,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath(`/chat/${threadId}`);
+  revalidatePath("/chat");
+  revalidatePath("/(app)", "layout");
+  return undefined;
+}
+
+export async function deleteAllMessages(
+  threadId: string,
+): Promise<ChatActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Не авторизован." };
+
+  const { error } = await supabase.rpc("delete_all_chat_messages", {
+    target_thread_id: threadId,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath(`/chat/${threadId}`);
+  revalidatePath("/chat");
+  revalidatePath("/(app)", "layout");
+  return undefined;
+}
+
+export async function deleteThreadForEveryone(
+  threadId: string,
+): Promise<ChatActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Не авторизован." };
+
+  const { error } = await supabase.rpc("delete_chat_thread_for_everyone", {
+    target_thread_id: threadId,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/chat");
+  revalidatePath("/(app)", "layout");
   return undefined;
 }

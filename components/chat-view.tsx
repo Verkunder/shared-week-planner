@@ -2,9 +2,11 @@
 
 import {
   ArrowLeftIcon,
+  BroomIcon,
   PaperclipIcon,
   PaperPlaneTiltIcon,
   SmileyIcon,
+  TrashIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import Link from "next/link";
@@ -18,6 +20,10 @@ import {
 } from "react";
 
 import {
+  clearThread,
+  deleteAllMessages,
+  deleteMessage,
+  deleteThreadForEveryone,
   markThreadRead,
   sendMessage,
   type ChatAttachment,
@@ -38,6 +44,7 @@ export type ChatMessage = {
   sender_id: string;
   text: string | null;
   created_at: string;
+  deleted_at?: string | null;
   attachments: ChatAttachment[];
 };
 
@@ -67,17 +74,25 @@ export function ChatView({
   const [stickerOpen, setStickerOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
   const router = useRouter();
 
-  useEffect(() => {
-    if (!pendingFile) {
-      setPreviewUrl(null);
-      return;
+  function setFilePreview(file: File | null) {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
     }
-    const url = URL.createObjectURL(pendingFile);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [pendingFile]);
+    setPendingFile(file);
+    const nextUrl = file ? URL.createObjectURL(file) : null;
+    previewUrlRef.current = nextUrl;
+    setPreviewUrl(nextUrl);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     void markThreadRead(threadId).then(() => router.refresh());
@@ -106,6 +121,28 @@ export function ChatView({
           }
         },
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "chat_messages",
+          filter: `thread_id=eq.${threadId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldMsg = payload.old as { id?: string };
+            if (oldMsg.id) {
+              setMessages((prev) => prev.filter((m) => m.id !== oldMsg.id));
+            }
+            return;
+          }
+          const msg = payload.new as ChatMessage | undefined;
+          if (msg?.deleted_at) {
+            setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+          }
+        },
+      )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -131,7 +168,7 @@ export function ChatView({
       return;
     }
     setError(undefined);
-    setPendingFile(f);
+    setFilePreview(f);
   }
 
   function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
@@ -141,7 +178,7 @@ export function ChatView({
     if (!trimmed && !file) return;
 
     setText("");
-    setPendingFile(null);
+    setFilePreview(null);
     setError(undefined);
 
     startTransition(async () => {
@@ -159,7 +196,7 @@ export function ChatView({
         if (upErr) {
           setError(upErr.message);
           setText(trimmed);
-          setPendingFile(file);
+          setFilePreview(file);
           return;
         }
         attachments.push({ type: "image", path });
@@ -169,7 +206,7 @@ export function ChatView({
       if (result?.error) {
         setError(result.error);
         setText(trimmed);
-        setPendingFile(file);
+        setFilePreview(file);
       }
     });
   }
@@ -193,6 +230,66 @@ export function ChatView({
     });
   }
 
+  function handleClearThread() {
+    if (messages.length === 0) return;
+    if (!window.confirm("Очистить этот диалог только у вас?")) return;
+    setError(undefined);
+    startTransition(async () => {
+      const result = await clearThread(threadId);
+      if (result?.error) {
+        setError(result.error);
+        return;
+      }
+      setMessages([]);
+      router.refresh();
+    });
+  }
+
+  function handleDeleteMessage(messageId: string) {
+    if (!window.confirm("Удалить сообщение у всех?")) return;
+    setError(undefined);
+    startTransition(async () => {
+      const result = await deleteMessage(messageId, threadId);
+      if (result?.error) {
+        setError(result.error);
+        return;
+      }
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      router.refresh();
+    });
+  }
+
+  function handleDeleteAllMessages() {
+    if (messages.length === 0) return;
+    if (!window.confirm("Удалить все сообщения в этом диалоге у всех?")) {
+      return;
+    }
+    setError(undefined);
+    startTransition(async () => {
+      const result = await deleteAllMessages(threadId);
+      if (result?.error) {
+        setError(result.error);
+        return;
+      }
+      setMessages([]);
+      router.refresh();
+    });
+  }
+
+  function handleDeleteThreadForEveryone() {
+    if (!window.confirm("Удалить весь диалог у всех на сервере?")) return;
+    setError(undefined);
+    startTransition(async () => {
+      const result = await deleteThreadForEveryone(threadId);
+      if (result?.error) {
+        setError(result.error);
+        return;
+      }
+      router.push("/chat");
+      router.refresh();
+    });
+  }
+
   const groups = groupByDay(messages);
 
   return (
@@ -212,6 +309,41 @@ export function ChatView({
           <AvatarFallback>{initials(counterpart.name)}</AvatarFallback>
         </Avatar>
         <span className="truncate text-sm font-medium">{counterpart.name}</span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={handleClearThread}
+          disabled={pending || messages.length === 0}
+          aria-label="Очистить диалог"
+          className="ml-auto size-8 shrink-0 text-muted-foreground hover:text-destructive"
+        >
+          <BroomIcon className="size-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={handleDeleteAllMessages}
+          disabled={pending || messages.length === 0}
+          title="Удалить все сообщения у всех"
+          aria-label="Удалить все сообщения у всех"
+          className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+        >
+          <TrashIcon className="size-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="destructive"
+          size="icon"
+          onClick={handleDeleteThreadForEveryone}
+          disabled={pending}
+          title="Удалить диалог у всех"
+          aria-label="Удалить диалог у всех"
+          className="size-8 shrink-0"
+        >
+          <XIcon className="size-4" />
+        </Button>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 py-3 sm:px-4">
@@ -231,6 +363,8 @@ export function ChatView({
                   key={m.id}
                   message={m}
                   fromSelf={m.sender_id === currentUserId}
+                  onDelete={() => handleDeleteMessage(m.id)}
+                  deletingDisabled={pending}
                 />
               ))}
             </div>
@@ -249,7 +383,7 @@ export function ChatView({
             />
             <button
               type="button"
-              onClick={() => setPendingFile(null)}
+              onClick={() => setFilePreview(null)}
               disabled={pending}
               className="absolute -right-1.5 -top-1.5 grid size-5 place-items-center rounded-full bg-foreground text-background shadow-md hover:bg-foreground/80"
               aria-label="Убрать фото"
@@ -336,9 +470,13 @@ export function ChatView({
 function MessageBubble({
   message,
   fromSelf,
+  onDelete,
+  deletingDisabled,
 }: {
   message: ChatMessage;
   fromSelf: boolean;
+  onDelete?: () => void;
+  deletingDisabled: boolean;
 }) {
   const attachments = message.attachments ?? [];
   const images = attachments.filter((a) => a.type === "image");
@@ -388,6 +526,17 @@ function MessageBubble({
       ) : null}
       <span className="text-[10px] text-muted-foreground">
         {formatTime(message.created_at)}
+        {onDelete ? (
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={deletingDisabled}
+            className="ml-2 align-middle text-muted-foreground hover:text-destructive disabled:opacity-50"
+            aria-label="Удалить сообщение"
+          >
+            <TrashIcon className="inline size-3" />
+          </button>
+        ) : null}
       </span>
     </div>
   );

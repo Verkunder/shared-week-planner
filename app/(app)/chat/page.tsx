@@ -9,7 +9,11 @@ export const metadata: Metadata = {
   title: "Чат",
 };
 
-type MembershipRow = { thread_id: string; last_read_at: string };
+type MembershipRow = {
+  thread_id: string;
+  last_read_at: string;
+  cleared_at: string;
+};
 
 type AttachmentRow =
   | { type: "image" }
@@ -21,6 +25,7 @@ type MessageRow = {
   sender_id: string;
   text: string | null;
   created_at: string;
+  deleted_at: string | null;
   attachments: AttachmentRow[] | null;
 };
 
@@ -42,20 +47,22 @@ export default async function ChatListPage() {
       .from("profiles")
       .select("id, name, avatar_url")
       .neq("id", user.id),
-    supabase
-      .from("chat_thread_members")
-      .select("thread_id, last_read_at")
-      .eq("user_id", user.id),
+      supabase
+        .from("chat_thread_members")
+        .select("thread_id, last_read_at, cleared_at")
+        .eq("user_id", user.id),
   ]);
 
   const memberships = (ownMemberships as MembershipRow[] | null) ?? [];
   const threadIds = memberships.map((m) => m.thread_id);
   const lastReadByThread = new Map<string, string>();
+  const clearedByThread = new Map<string, string>();
   for (const m of memberships) lastReadByThread.set(m.thread_id, m.last_read_at);
+  for (const m of memberships) clearedByThread.set(m.thread_id, m.cleared_at);
 
   let counterpartByThread = new Map<string, string>();
-  let lastByThread = new Map<string, MessageRow>();
-  let unreadByCounterpart = new Map<string, number>();
+  const lastByThread = new Map<string, MessageRow>();
+  const unreadByCounterpart = new Map<string, number>();
 
   if (threadIds.length > 0) {
     const [{ data: otherMembers }, { data: messages }] = await Promise.all([
@@ -66,8 +73,9 @@ export default async function ChatListPage() {
         .neq("user_id", user.id),
       supabase
         .from("chat_messages")
-        .select("thread_id, sender_id, text, created_at, attachments")
+        .select("thread_id, sender_id, text, created_at, deleted_at, attachments")
         .in("thread_id", threadIds)
+        .is("deleted_at", null)
         .gt("expires_at", new Date().toISOString())
         .order("created_at", { ascending: false }),
     ]);
@@ -78,6 +86,8 @@ export default async function ChatListPage() {
     );
 
     for (const m of (messages as MessageRow[] | null) ?? []) {
+      const clearedAt = clearedByThread.get(m.thread_id) ?? "";
+      if (m.created_at <= clearedAt) continue;
       if (!lastByThread.has(m.thread_id)) lastByThread.set(m.thread_id, m);
       const counterpart = counterpartByThread.get(m.thread_id);
       if (!counterpart) continue;

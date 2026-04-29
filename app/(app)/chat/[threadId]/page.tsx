@@ -22,7 +22,7 @@ export default async function ChatThreadPage({
 
   const { data: membership } = await supabase
     .from("chat_thread_members")
-    .select("thread_id")
+    .select("thread_id, cleared_at")
     .eq("thread_id", threadId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -57,8 +57,10 @@ export default async function ChatThreadPage({
 
   const { data: messages } = await supabase
     .from("chat_messages")
-    .select("id, sender_id, text, created_at, attachments")
+    .select("id, sender_id, text, created_at, deleted_at, attachments")
     .eq("thread_id", threadId)
+    .is("deleted_at", null)
+    .gt("created_at", membership.cleared_at ?? "epoch")
     .gt("expires_at", new Date().toISOString())
     .order("created_at", { ascending: true });
 
