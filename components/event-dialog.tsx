@@ -77,7 +77,7 @@ export function EventDialog({
         if (!o) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-w-[calc(100%-0.75rem)] p-3 sm:max-w-md sm:p-4">
         {state ? (
           <EventDialogBody
             key={state.mode === "edit" ? state.id : "create"}
@@ -311,8 +311,8 @@ function EventDialogBody({
         />
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2">
-        <div className="grid gap-1.5">
+      <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-1.5">
           <Label htmlFor="event-start">Начало</Label>
           <Input
             id="event-start"
@@ -321,9 +321,10 @@ function EventDialogBody({
             onChange={(e) => setStartInput(e.target.value)}
             required
             disabled={readOnly}
+            className="max-w-full"
           />
         </div>
-        <div className="grid gap-1.5">
+        <div className="grid min-w-0 gap-1.5">
           <Label htmlFor="event-end">Окончание</Label>
           <Input
             id="event-end"
@@ -332,6 +333,7 @@ function EventDialogBody({
             onChange={(e) => setEndInput(e.target.value)}
             required
             disabled={readOnly}
+            className="max-w-full"
           />
         </div>
       </div>
