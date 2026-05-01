@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { ChatList, type ChatListEntry } from "@/components/chat-list";
 import { PushPermission } from "@/components/push-permission";
+import { getCurrentUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
@@ -37,9 +38,7 @@ type ProfileRow = {
 
 export default async function ChatListPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   const [{ data: profiles }, { data: ownMemberships }] = await Promise.all([

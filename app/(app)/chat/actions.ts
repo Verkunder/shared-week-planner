@@ -11,7 +11,16 @@ import { createClient } from "@/lib/supabase/server";
 
 export type ChatAttachment =
   | { type: "image"; path: string; width?: number; height?: number }
-  | { type: "sticker"; emoji: string };
+  | { type: "sticker"; emoji: string }
+  | {
+      type: "reply";
+      message_id: string;
+      sender_id: string;
+      text: string | null;
+      created_at: string;
+      attachment_kind: "image" | "sticker" | null;
+      sticker_emoji?: string | null;
+    };
 
 export type ChatMessageRow = {
   id: string;
@@ -80,18 +89,23 @@ export async function sendMessage(
   threadId: string,
   text: string,
   attachments: ChatAttachment[] = [],
+  replyToMessageId?: string,
 ): Promise<ChatActionResult> {
   const trimmed = text.trim();
-  if (!trimmed && attachments.length === 0) {
+  const contentAttachments = attachments.filter(
+    (a): a is Exclude<ChatAttachment, { type: "reply" }> =>
+      a.type !== "reply",
+  );
+  if (!trimmed && contentAttachments.length === 0) {
     return { error: "Сообщение пустое." };
   }
   if (trimmed.length > MESSAGE_MAX_LENGTH) {
     return { error: "Сообщение слишком длинное." };
   }
-  if (attachments.length > ATTACHMENTS_MAX) {
+  if (contentAttachments.length > ATTACHMENTS_MAX) {
     return { error: "Слишком много вложений." };
   }
-  for (const a of attachments) {
+  for (const a of contentAttachments) {
     if (a.type === "image") {
       if (typeof a.path !== "string" || !a.path) {
         return { error: "Некорректное вложение." };
@@ -114,20 +128,73 @@ export async function sendMessage(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Не авторизован." };
 
+  const replyAttachment = replyToMessageId
+    ? await buildReplyAttachment(supabase, threadId, replyToMessageId, user.id)
+    : null;
+  if (replyAttachment && "error" in replyAttachment) return replyAttachment;
+
+  const messageAttachments = replyAttachment
+    ? [replyAttachment, ...contentAttachments]
+    : contentAttachments;
+
   const { error } = await supabase.from("chat_messages").insert({
     thread_id: threadId,
     sender_id: user.id,
     text: trimmed || null,
-    attachments,
+    attachments: messageAttachments,
   });
   if (error) return { error: error.message };
 
-  await notifyRecipients(supabase, threadId, user.id, trimmed, attachments);
+  await notifyRecipients(supabase, threadId, user.id, trimmed, messageAttachments);
 
   revalidatePath(`/chat/${threadId}`);
   revalidatePath("/chat");
   revalidatePath("/(app)", "layout");
   return undefined;
+}
+
+async function buildReplyAttachment(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  threadId: string,
+  messageId: string,
+  userId: string,
+): Promise<Extract<ChatAttachment, { type: "reply" }> | { error: string }> {
+  const { data: membership, error: membershipError } = await supabase
+    .from("chat_thread_members")
+    .select("cleared_at")
+    .eq("thread_id", threadId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (membershipError) return { error: membershipError.message };
+  if (!membership) return { error: "Р§Р°С‚ РЅРµ РЅР°Р№РґРµРЅ." };
+
+  const { data: reply, error: replyError } = await supabase
+    .from("chat_messages")
+    .select("id, sender_id, text, created_at, attachments")
+    .eq("id", messageId)
+    .eq("thread_id", threadId)
+    .is("deleted_at", null)
+    .gt("created_at", membership.cleared_at ?? "epoch")
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+  if (replyError) return { error: replyError.message };
+  if (!reply) {
+    return { error: "РЎРѕРѕР±С‰РµРЅРёРµ РґР»СЏ РѕС‚РІРµС‚Р° РЅРµ РЅР°Р№РґРµРЅРѕ." };
+  }
+
+  const replyAttachments = (reply.attachments ?? []) as ChatAttachment[];
+  const sticker = replyAttachments.find((a) => a.type === "sticker");
+  const hasImage = replyAttachments.some((a) => a.type === "image");
+
+  return {
+    type: "reply",
+    message_id: reply.id,
+    sender_id: reply.sender_id,
+    text: reply.text,
+    created_at: reply.created_at,
+    attachment_kind: hasImage ? "image" : sticker ? "sticker" : null,
+    sticker_emoji: sticker?.type === "sticker" ? sticker.emoji : null,
+  };
 }
 
 function previewBody(text: string, attachments: ChatAttachment[]): string {

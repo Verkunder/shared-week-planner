@@ -1,15 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono } from "next/font/google";
 
 import { ThemeProvider } from "@/components/theme-provider";
-import { cn } from "@/lib/utils";
 
 import "./globals.css";
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin", "cyrillic"],
-  variable: "--font-mono",
-});
 
 export const metadata: Metadata = {
   applicationName: "Планер",
@@ -60,7 +53,7 @@ export default function RootLayout({
     <html
       lang="ru"
       suppressHydrationWarning
-      className={cn("font-mono", jetbrainsMono.variable)}
+      className="font-mono"
     >
       <body>
         <ThemeProvider

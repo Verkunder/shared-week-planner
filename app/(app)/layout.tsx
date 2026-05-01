@@ -4,6 +4,7 @@ import { type EventCategory } from "@/app/(app)/profile/actions";
 import { AppHeader } from "@/components/app-header";
 import { IosInstallPrompt } from "@/components/ios-install-prompt";
 import type { IncomingSuggestion } from "@/components/movie-inbox";
+import { getCurrentUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import type { SessionUser } from "@/lib/user";
 
@@ -33,9 +34,7 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   const [{ data: profile }, { data: rawSuggestions }, { data: chatUnreadRaw }] =

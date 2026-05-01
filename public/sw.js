@@ -5,18 +5,30 @@ self.addEventListener("push", (event) => {
   let data;
   try {
     data = event.data.json();
-  } catch (_e) {
+  } catch {
     data = { title: "Новое сообщение", body: event.data.text() };
   }
-  const title = data.title || "Новое сообщение";
-  const options = {
-    body: data.body || "",
-    tag: data.tag,
-    icon: data.icon,
-    badge: data.badge,
-    data: { thread_id: data.thread_id },
-  };
-  event.waitUntil(self.registration.showNotification(title, options));
+
+  event.waitUntil(
+    (async () => {
+      const threadId = data.thread_id;
+      if (threadId && (await hasVisibleThreadClient(threadId))) {
+        await closeThreadNotifications(threadId);
+        return;
+      }
+
+      const title = data.title || "Новое сообщение";
+      const options = {
+        body: data.body || "",
+        tag: data.tag,
+        renotify: false,
+        icon: data.icon,
+        badge: data.badge,
+        data: { thread_id: threadId },
+      };
+      await self.registration.showNotification(title, options);
+    })(),
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {
@@ -26,6 +38,8 @@ self.addEventListener("notificationclick", (event) => {
 
   event.waitUntil(
     (async () => {
+      if (threadId) await closeThreadNotifications(threadId);
+
       const all = await self.clients.matchAll({
         type: "window",
         includeUncontrolled: true,
@@ -43,7 +57,7 @@ self.addEventListener("notificationclick", (event) => {
         if ("navigate" in client) {
           try {
             await client.navigate(path);
-          } catch (_e) {
+          } catch {
             // navigate is restricted in some browsers; fall back to openWindow
             if (self.clients.openWindow) {
               await self.clients.openWindow(path);
@@ -58,6 +72,40 @@ self.addEventListener("notificationclick", (event) => {
     })(),
   );
 });
+
+self.addEventListener("message", (event) => {
+  const data = event.data || {};
+  if (data.type !== "CHAT_THREAD_READ") return;
+  event.waitUntil(closeThreadNotifications(data.threadId));
+});
+
+async function hasVisibleThreadClient(threadId) {
+  const path = "/chat/" + threadId;
+  const all = await self.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+  return all.some((client) => {
+    const url = new URL(client.url);
+    return (
+      url.pathname === path &&
+      (client.focused || client.visibilityState === "visible")
+    );
+  });
+}
+
+async function closeThreadNotifications(threadId) {
+  if (!threadId) return;
+  const notifications = await self.registration.getNotifications({
+    includeTriggered: true,
+  });
+  for (const notification of notifications) {
+    const data = notification.data || {};
+    if (data.thread_id === threadId || notification.tag === "chat:" + threadId) {
+      notification.close();
+    }
+  }
+}
 
 // Allow new SW to activate immediately on update.
 self.addEventListener("install", () => {

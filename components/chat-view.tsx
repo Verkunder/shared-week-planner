@@ -2,6 +2,7 @@
 
 import {
   ArrowLeftIcon,
+  ArrowBendUpLeftIcon,
   BroomIcon,
   PaperclipIcon,
   PaperPlaneTiltIcon,
@@ -73,6 +74,7 @@ export function ChatView({
   const [error, setError] = useState<string>();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [stickerOpen, setStickerOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -103,6 +105,7 @@ export function ChatView({
 
   useEffect(() => {
     void markThreadRead(threadId);
+    closeThreadNotifications(threadId);
   }, [threadId]);
 
   useEffect(() => {
@@ -132,17 +135,20 @@ export function ChatView({
             return;
           }
           setMessages((prev) => upsertMessage(prev, msg));
-          if (payload.eventType === "INSERT" && msg.sender_id !== currentUserId) {
+          if (
+            payload.eventType === "INSERT" &&
+            msg.sender_id !== currentUserId
+          ) {
             void markThreadRead(threadId);
+            closeThreadNotifications(threadId);
           }
-          void refreshMessages();
         },
       )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [threadId, currentUserId, setMessages, refreshMessages]);
+  }, [threadId, currentUserId, setMessages]);
 
   useEffect(() => {
     const refreshIfVisible = () => {
@@ -185,10 +191,12 @@ export function ChatView({
     e.preventDefault();
     const trimmed = text.trim();
     const file = pendingFile;
+    const reply = replyTo;
     if (!trimmed && !file) return;
 
     setText("");
     setFilePreview(null);
+    setReplyTo(null);
     setError(undefined);
 
     startTransition(async () => {
@@ -212,11 +220,17 @@ export function ChatView({
         attachments.push({ type: "image", path });
       }
 
-      const result = await sendMessage(threadId, trimmed, attachments);
+      const result = await sendMessage(
+        threadId,
+        trimmed,
+        attachments,
+        reply?.id,
+      );
       if (result?.error) {
         setError(result.error);
         setText(trimmed);
         setFilePreview(file);
+        setReplyTo(reply);
         return;
       }
       await refreshMessages();
@@ -232,14 +246,20 @@ export function ChatView({
   }
 
   function sendSticker(emoji: string) {
+    const reply = replyTo;
     setStickerOpen(false);
+    setReplyTo(null);
     setError(undefined);
     startTransition(async () => {
       const result = await sendMessage(threadId, "", [
         { type: "sticker", emoji },
-      ]);
-      if (result?.error) setError(result.error);
-      else await refreshMessages();
+      ], reply?.id);
+      if (result?.error) {
+        setError(result.error);
+        setReplyTo(reply);
+      } else {
+        await refreshMessages();
+      }
     });
   }
 
@@ -268,6 +288,7 @@ export function ChatView({
         return;
       }
       setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      setReplyTo((current) => (current?.id === messageId ? null : current));
       router.refresh();
     });
   }
@@ -376,6 +397,9 @@ export function ChatView({
                   key={m.id}
                   message={m}
                   fromSelf={m.sender_id === currentUserId}
+                  currentUserId={currentUserId}
+                  counterpartName={counterpart.name}
+                  onReply={() => setReplyTo(m)}
                   onDelete={() => handleDeleteMessage(m.id)}
                   deletingDisabled={pending}
                 />
@@ -412,6 +436,15 @@ export function ChatView({
 
       {stickerOpen ? (
         <StickerPanel onPick={sendSticker} disabled={pending} />
+      ) : null}
+
+      {replyTo ? (
+        <ReplyComposerPreview
+          message={replyTo}
+          currentUserId={currentUserId}
+          counterpartName={counterpart.name}
+          onCancel={() => setReplyTo(null)}
+        />
       ) : null}
 
       <form
@@ -499,15 +532,22 @@ function useSyncedMessages(threadId: string, initialMessages: ChatMessage[]) {
 function MessageBubble({
   message,
   fromSelf,
+  currentUserId,
+  counterpartName,
+  onReply,
   onDelete,
   deletingDisabled,
 }: {
   message: ChatMessage;
   fromSelf: boolean;
+  currentUserId: string;
+  counterpartName: string;
+  onReply: () => void;
   onDelete?: () => void;
   deletingDisabled: boolean;
 }) {
   const attachments = message.attachments ?? [];
+  const reply = attachments.find((a) => a.type === "reply");
   const images = attachments.filter((a) => a.type === "image");
   const stickers = attachments.filter((a) => a.type === "sticker");
   const hasText = message.text && message.text.length > 0;
@@ -519,6 +559,13 @@ function MessageBubble({
         fromSelf ? "self-end items-end" : "self-start items-start",
       )}
     >
+      {reply?.type === "reply" ? (
+        <ReplyQuote
+          reply={reply}
+          currentUserId={currentUserId}
+          counterpartName={counterpartName}
+        />
+      ) : null}
       {stickers.map((s, i) => (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -555,6 +602,15 @@ function MessageBubble({
       ) : null}
       <span className="text-[10px] text-muted-foreground">
         {formatTime(message.created_at)}
+        <button
+          type="button"
+          onClick={onReply}
+          disabled={deletingDisabled}
+          className="ml-2 align-middle text-muted-foreground hover:text-foreground disabled:opacity-50"
+          aria-label="Ответить"
+        >
+          <ArrowBendUpLeftIcon className="inline size-3" />
+        </button>
         {onDelete ? (
           <button
             type="button"
@@ -567,6 +623,62 @@ function MessageBubble({
           </button>
         ) : null}
       </span>
+    </div>
+  );
+}
+
+function ReplyComposerPreview({
+  message,
+  currentUserId,
+  counterpartName,
+  onCancel,
+}: {
+  message: ChatMessage;
+  currentUserId: string;
+  counterpartName: string;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-t border-border bg-background px-2 py-2 sm:px-4">
+      <div className="min-w-0 flex-1 border-l-2 border-primary pl-2">
+        <div className="truncate text-[11px] font-medium text-primary">
+          Ответ {message.sender_id === currentUserId ? "себе" : counterpartName}
+        </div>
+        <div className="truncate text-xs text-muted-foreground">
+          {messagePreview(message)}
+        </div>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={onCancel}
+        aria-label="Отменить ответ"
+        className="size-8 shrink-0"
+      >
+        <XIcon className="size-4" />
+      </Button>
+    </div>
+  );
+}
+
+function ReplyQuote({
+  reply,
+  currentUserId,
+  counterpartName,
+}: {
+  reply: Extract<ChatAttachment, { type: "reply" }>;
+  currentUserId: string;
+  counterpartName: string;
+}) {
+  return (
+    <div className="max-w-full rounded-md border-l-2 border-primary/70 bg-background/70 px-2 py-1 text-left ring-1 ring-foreground/10">
+      <div className="truncate text-[10px] font-medium text-primary">
+        {reply.sender_id === currentUserId ? "Вы" : counterpartName}
+      </div>
+      <div className="truncate text-[11px] text-muted-foreground">
+        {replyPreview(reply)}
+      </div>
     </div>
   );
 }
@@ -661,6 +773,24 @@ function mimeToExt(mime: string): string {
   return "bin";
 }
 
+function messagePreview(message: ChatMessage): string {
+  if (message.text) return message.text;
+  const attachments = message.attachments ?? [];
+  const sticker = attachments.find((a) => a.type === "sticker");
+  if (sticker?.type === "sticker") return `${sticker.emoji} Стикер`;
+  if (attachments.some((a) => a.type === "image")) return "Фото";
+  return "Сообщение";
+}
+
+function replyPreview(reply: Extract<ChatAttachment, { type: "reply" }>): string {
+  if (reply.text) return reply.text;
+  if (reply.attachment_kind === "sticker") {
+    return `${reply.sticker_emoji ?? ""} Стикер`.trim();
+  }
+  if (reply.attachment_kind === "image") return "Фото";
+  return "Сообщение";
+}
+
 type DayGroup = {
   dayKey: string;
   dayLabel: string;
@@ -711,4 +841,16 @@ function formatTime(iso: string): string {
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
+}
+
+function closeThreadNotifications(threadId: string): void {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.ready
+    .then((registration) => {
+      const worker = registration.active ?? navigator.serviceWorker.controller;
+      worker?.postMessage({ type: "CHAT_THREAD_READ", threadId });
+    })
+    .catch(() => {
+      // Notification cleanup is best-effort; reading the chat should never fail.
+    });
 }
