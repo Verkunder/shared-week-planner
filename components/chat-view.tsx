@@ -155,11 +155,9 @@ export function ChatView({
       if (document.visibilityState === "visible") void refreshMessages();
     };
 
-    const interval = window.setInterval(refreshIfVisible, 4000);
     window.addEventListener("focus", refreshIfVisible);
     document.addEventListener("visibilitychange", refreshIfVisible);
     return () => {
-      window.clearInterval(interval);
       window.removeEventListener("focus", refreshIfVisible);
       document.removeEventListener("visibilitychange", refreshIfVisible);
     };
@@ -416,6 +414,7 @@ export function ChatView({
             <img
               src={previewUrl}
               alt=""
+              decoding="async"
               className="size-16 rounded-md object-cover ring-1 ring-foreground/10"
             />
             <button
@@ -572,6 +571,7 @@ function MessageBubble({
           key={`${s.emoji}-${i}`}
           src={twemojiUrl(s.emoji, 72)}
           alt={s.emoji}
+          decoding="async"
           className="size-24 select-none"
           draggable={false}
         />
@@ -706,6 +706,7 @@ function StickerPanel({
             <img
               src={twemojiUrl(emoji, 72)}
               alt={emoji}
+              decoding="async"
               className="size-8 select-none"
               draggable={false}
               loading="lazy"
@@ -750,6 +751,7 @@ function ImageAttachment({ path }: { path: string }) {
       <img
         src={url}
         alt=""
+        decoding="async"
         className="max-h-72 max-w-full rounded-lg object-cover"
         loading="lazy"
       />

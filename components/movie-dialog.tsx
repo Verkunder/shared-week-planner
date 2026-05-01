@@ -163,6 +163,7 @@ function MovieDialogBody({
             <img
               src={proxiedImageSrc(poster)}
               alt=""
+              decoding="async"
               className="h-40 w-28 object-cover ring-1 ring-foreground/10"
             />
           ) : (

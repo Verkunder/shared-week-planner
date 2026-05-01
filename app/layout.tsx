@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 
+import { ServiceWorkerUpdater } from "@/components/service-worker-updater";
 import { ThemeProvider } from "@/components/theme-provider";
 
 import "./globals.css";
@@ -50,11 +51,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html
-      lang="ru"
-      suppressHydrationWarning
-      className="font-mono"
-    >
+    <html lang="ru" suppressHydrationWarning className="font-mono">
       <body>
         <ThemeProvider
           attribute="class"
@@ -63,6 +60,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {children}
+          <ServiceWorkerUpdater />
         </ThemeProvider>
       </body>
     </html>

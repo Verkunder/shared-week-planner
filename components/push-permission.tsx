@@ -34,6 +34,7 @@ export function PushPermission() {
       if (!reg) {
         reg = await navigator.serviceWorker.register("/sw.js");
       }
+      await reg.update();
       await navigator.serviceWorker.ready;
 
       const permission = requestPermission

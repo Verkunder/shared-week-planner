@@ -14,6 +14,11 @@ export type EventInput = {
   color: string | null;
 };
 
+export type CalendarEventRow = EventInput & {
+  id: string;
+  owner_id: string;
+};
+
 export type EventResult = { error?: string; id?: string } | undefined;
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
@@ -33,6 +38,33 @@ function validate(input: Partial<EventInput>): string | null {
     return "Некорректный цвет.";
   }
   return null;
+}
+
+export async function getEventsInRange(
+  from: string,
+  to: string,
+): Promise<{ events?: CalendarEventRow[]; error?: string }> {
+  if (new Date(from) >= new Date(to)) {
+    return { error: "Некорректный диапазон." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Не авторизован." };
+
+  const { data, error } = await supabase
+    .from("events")
+    .select(
+      "id, owner_id, title, description, starts_at, ends_at, all_day, category_id, color",
+    )
+    .lt("starts_at", to)
+    .gt("ends_at", from)
+    .order("starts_at");
+
+  if (error) return { error: error.message };
+  return { events: (data as CalendarEventRow[] | null) ?? [] };
 }
 
 export async function createEvent(input: EventInput): Promise<EventResult> {

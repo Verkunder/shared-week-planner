@@ -38,6 +38,11 @@ const SELECT_FIELDS = [
   "genres",
 ];
 
+const memoryCache = new Map<
+  string,
+  { expiresAt: number; value: unknown; promise?: Promise<unknown> }
+>();
+
 function key(): string {
   const k = process.env.KINOPOISK_API_KEY;
   if (!k) throw new Error("KINOPOISK_API_KEY is not set");
@@ -51,30 +56,58 @@ async function kpFetch<T>(
 ): Promise<T> {
   const url = new URL(KP_BASE + path);
   for (const [k, v] of params) url.searchParams.append(k, String(v));
+  const cacheKey = url.toString();
+  const cached = memoryCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
+    if (cached.promise) return cached.promise as Promise<T>;
+    return cached.value as T;
+  }
 
-  let res: Response;
+  const promise = (async () => {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        cache: "force-cache",
+        headers: {
+          "X-API-KEY": key(),
+          Accept: "application/json",
+        },
+        next: { revalidate },
+      });
+    } catch (e) {
+      const cause = (e as { cause?: unknown }).cause;
+      const detail =
+        cause instanceof Error
+          ? `${cause.name}: ${cause.message}`
+          : String(cause ?? (e as Error).message);
+      throw new Error(`Kinopoisk fetch failed (${url.host}): ${detail}`);
+    }
+    if (!res.ok) {
+      throw new Error(
+        `Kinopoisk ${res.status}: ${await res.text().catch(() => "")}`,
+      );
+    }
+    return res.json() as Promise<T>;
+  })();
+
+  memoryCache.set(cacheKey, {
+    expiresAt: now + revalidate * 1000,
+    value: null,
+    promise,
+  });
+
   try {
-    res = await fetch(url, {
-      headers: {
-        "X-API-KEY": key(),
-        Accept: "application/json",
-      },
-      next: { revalidate },
+    const value = await promise;
+    memoryCache.set(cacheKey, {
+      expiresAt: Date.now() + revalidate * 1000,
+      value,
     });
+    return value;
   } catch (e) {
-    const cause = (e as { cause?: unknown }).cause;
-    const detail =
-      cause instanceof Error
-        ? `${cause.name}: ${cause.message}`
-        : String(cause ?? (e as Error).message);
-    throw new Error(`Kinopoisk fetch failed (${url.host}): ${detail}`);
+    memoryCache.delete(cacheKey);
+    throw e;
   }
-  if (!res.ok) {
-    throw new Error(
-      `Kinopoisk ${res.status}: ${await res.text().catch(() => "")}`,
-    );
-  }
-  return res.json() as Promise<T>;
 }
 
 export async function getGenres(): Promise<KpGenre[]> {

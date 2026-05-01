@@ -36,10 +36,48 @@ type ProfileRow = {
   avatar_url: string | null;
 };
 
+type ChatListRpcRow = {
+  user_id: string;
+  name: string | null;
+  avatar_url: string | null;
+  last_from_self: boolean | null;
+  last_text: string | null;
+  last_has_image: boolean | null;
+  last_sticker_emoji: string | null;
+  last_created_at: string | null;
+  unread_count: number | null;
+};
+
 export default async function ChatListPage() {
   const supabase = await createClient();
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+
+  const { data: rpcEntries, error: rpcError } = await supabase.rpc(
+    "chat_list_for_user",
+  );
+
+  if (!rpcError && rpcEntries) {
+    return (
+      <ChatListShell
+        entries={(rpcEntries as ChatListRpcRow[]).map((row) => ({
+          userId: row.user_id,
+          name: row.name ?? "—",
+          avatarUrl: row.avatar_url,
+          lastMessage: row.last_created_at
+            ? {
+                fromSelf: Boolean(row.last_from_self),
+                text: row.last_text,
+                hasImage: Boolean(row.last_has_image),
+                stickerEmoji: row.last_sticker_emoji,
+                created_at: row.last_created_at,
+              }
+            : null,
+          unreadCount: row.unread_count ?? 0,
+        }))}
+      />
+    );
+  }
 
   const [{ data: profiles }, { data: ownMemberships }] = await Promise.all([
     supabase
@@ -139,6 +177,10 @@ export default async function ChatListPage() {
       return aT < bT ? 1 : -1;
     });
 
+  return <ChatListShell entries={entries} />;
+}
+
+function ChatListShell({ entries }: { entries: ChatListEntry[] }) {
   return (
     <div className="flex h-full flex-col">
       <PushPermission />

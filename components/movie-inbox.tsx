@@ -121,6 +121,7 @@ function SuggestionRow({ suggestion }: { suggestion: IncomingSuggestion }) {
           <img
             src={proxiedImageSrc(poster)}
             alt=""
+            decoding="async"
             className="h-24 w-16 object-cover ring-1 ring-foreground/10"
           />
         ) : (

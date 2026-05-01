@@ -7,19 +7,17 @@ import type {
   EventDropArg,
   EventInput,
 } from "@fullcalendar/core";
-import ruLocale from "@fullcalendar/core/locales/ru";
-import dayGridPlugin from "@fullcalendar/daygrid";
-import interactionPlugin, {
-  type DateClickArg,
-  type EventResizeDoneArg,
-} from "@fullcalendar/interaction";
-import FullCalendar from "@fullcalendar/react";
-import timeGridPlugin from "@fullcalendar/timegrid";
+import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import { CaretLeftIcon, CaretRightIcon, PlusIcon } from "@phosphor-icons/react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
-import { duplicateEvent, updateEvent } from "@/app/(app)/events/actions";
+import {
+  duplicateEvent,
+  getEventsInRange,
+  updateEvent,
+} from "@/app/(app)/events/actions";
 import { type EventCategory } from "@/app/(app)/profile/actions";
 import {
   EventDialog,
@@ -37,6 +35,21 @@ import { createClient } from "@/lib/supabase/client";
 import { proxiedImageSrc } from "@/lib/image-proxy";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/user";
+
+const FullCalendarClient = dynamic(
+  () =>
+    import("@/components/full-calendar-client").then(
+      (mod) => mod.FullCalendarClient,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="grid h-full place-items-center border border-border bg-muted/20 text-xs text-muted-foreground">
+        Загружаем календарь...
+      </div>
+    ),
+  },
+);
 
 export type EventRow = {
   id: string;
@@ -80,22 +93,39 @@ export function CalendarView({
   currentUserId,
   events,
   profiles,
+  initialRange,
 }: {
   currentUserId: string;
   events: EventRow[];
   profiles: ProfileRow[];
+  initialRange: { from: string; to: string };
 }) {
+  const [visibleEvents, setVisibleEvents] = useState<EventRow[]>(events);
+  const [loadedRange, setLoadedRange] = useState(initialRange);
   const [dialog, setDialog] = useState<EventDialogState | null>(null);
   const [dropChoice, setDropChoice] = useState<DropChoice | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [eventsPending, startEventsTransition] = useTransition();
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [anchorDate, setAnchorDate] = useState<Date>(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
   });
-  const fcRef = useRef<FullCalendar>(null);
   const router = useRouter();
+
+  const refreshVisibleEvents = useCallback(() => {
+    const range = calendarRange(viewMode, anchorDate);
+    startEventsTransition(async () => {
+      const result = await getEventsInRange(range.from, range.to);
+      if (result.events) {
+        setVisibleEvents(result.events);
+        setLoadedRange(range);
+      } else {
+        router.refresh();
+      }
+    });
+  }, [anchorDate, router, viewMode]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 640px)");
@@ -118,16 +148,26 @@ export function CalendarView({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "events" },
-        () => {
-          router.refresh();
-        },
+        () => refreshVisibleEvents(),
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [router]);
+  }, [refreshVisibleEvents]);
+
+  useEffect(() => {
+    const range = calendarRange(viewMode, anchorDate);
+    if (rangeContains(loadedRange, range)) return;
+    startEventsTransition(async () => {
+      const result = await getEventsInRange(range.from, range.to);
+      if (result.events) {
+        setVisibleEvents(result.events);
+        setLoadedRange(range);
+      }
+    });
+  }, [viewMode, anchorDate, loadedRange]);
 
   const profilesById = useMemo(() => {
     const m = new Map<string, ProfileRow>();
@@ -142,7 +182,7 @@ export function CalendarView({
 
   const fcEvents = useMemo<EventInput[]>(
     () =>
-      events.map((e) => {
+      visibleEvents.map((e) => {
         const profile = profilesById.get(e.owner_id);
         const cat = profile?.event_categories?.find(
           (c) => c.id === e.category_id,
@@ -162,7 +202,7 @@ export function CalendarView({
           },
         };
       }),
-    [events, profilesById, currentUserId],
+    [visibleEvents, profilesById, currentUserId],
   );
 
   function openCreate(starts_at: string, ends_at: string, all_day: boolean) {
@@ -180,7 +220,7 @@ export function CalendarView({
   }
 
   function handleEventClick(arg: EventClickArg) {
-    const e = events.find((ev) => ev.id === arg.event.id);
+    const e = visibleEvents.find((ev) => ev.id === arg.event.id);
     if (!e) return;
     setDialog({
       mode: "edit",
@@ -197,7 +237,7 @@ export function CalendarView({
   }
 
   async function handleEventResize(arg: EventResizeDoneArg) {
-    const e = events.find((ev) => ev.id === arg.event.id);
+    const e = visibleEvents.find((ev) => ev.id === arg.event.id);
     if (!e || e.owner_id !== currentUserId) {
       arg.revert();
       return;
@@ -218,7 +258,7 @@ export function CalendarView({
   }
 
   async function handleEventDrop(arg: EventDropArg) {
-    const e = events.find((ev) => ev.id === arg.event.id);
+    const e = visibleEvents.find((ev) => ev.id === arg.event.id);
     if (!e || e.owner_id !== currentUserId) {
       arg.revert();
       return;
@@ -304,6 +344,7 @@ export function CalendarView({
           <img
             src={proxiedImageSrc(avatar)}
             alt=""
+            decoding="async"
             className="size-5 shrink-0 rounded-full object-cover ring-1 ring-white/40"
           />
         ) : (
@@ -331,20 +372,6 @@ export function CalendarView({
     dialog?.mode === "edit"
       ? profilesById.get(dialog.ownerId)?.event_categories ?? []
       : myCategories;
-
-  useEffect(() => {
-    if (viewMode === "agenda") return;
-    const api = fcRef.current?.getApi();
-    if (!api) return;
-    const target = fcViewName(viewMode);
-    queueMicrotask(() => {
-      if (api.view.type !== target) {
-        api.changeView(target, anchorDate);
-      } else {
-        api.gotoDate(anchorDate);
-      }
-    });
-  }, [viewMode, anchorDate]);
 
   function shiftAnchor(direction: 1 | -1) {
     const next = new Date(anchorDate);
@@ -394,6 +421,7 @@ export function CalendarView({
 
   const initialFcView = isMobile ? "timeGridDay" : "timeGridWeek";
   const showAgenda = viewMode === "agenda";
+  const activeFcView = viewMode === "agenda" ? initialFcView : fcViewName(viewMode);
 
   return (
     <>
@@ -413,13 +441,16 @@ export function CalendarView({
             Alt — чтобы скопировать.
           </p>
         ) : null}
+        {eventsPending ? (
+          <div className="shrink-0 border-b border-border px-4 py-1 text-[11px] text-muted-foreground">
+            Обновляем события...
+          </div>
+        ) : null}
         <div className={cn("flex-1 overflow-hidden", showAgenda ? "" : "p-2 sm:p-4")}>
           <div className={cn("h-full", showAgenda ? "hidden" : "block")}>
-            <FullCalendar
-              ref={fcRef}
-              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-              locale={ruLocale}
-              initialView={initialFcView}
+            <FullCalendarClient
+              key={`${activeFcView}:${dateKey(anchorDate)}`}
+              initialView={activeFcView}
               initialDate={anchorDate.toISOString()}
               firstDay={1}
               headerToolbar={false}
@@ -441,7 +472,7 @@ export function CalendarView({
           {showAgenda ? (
             <AgendaView
               anchor={anchorDate}
-              events={events}
+              events={visibleEvents}
               profilesById={profilesById}
               onEventClick={openEdit}
               onCreate={createOnDay}
@@ -639,6 +670,7 @@ function AgendaView({
                           <img
                             src={proxiedImageSrc(profile.avatar_url)}
                             alt=""
+                            decoding="async"
                             className="size-6 shrink-0 rounded-full object-cover"
                           />
                         ) : (
@@ -756,6 +788,43 @@ function formatTitle(mode: ViewMode, anchor: Date): string {
 
 function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function calendarRange(
+  mode: ViewMode,
+  anchor: Date,
+): { from: string; to: string } {
+  const from = new Date(anchor);
+  from.setHours(0, 0, 0, 0);
+
+  if (mode === "month") {
+    from.setDate(1);
+    from.setDate(from.getDate() - 7);
+    const to = new Date(anchor);
+    to.setMonth(to.getMonth() + 1, 1);
+    to.setHours(0, 0, 0, 0);
+    to.setDate(to.getDate() + 7);
+    return { from: from.toISOString(), to: to.toISOString() };
+  }
+
+  const dayOfWeek = (from.getDay() + 6) % 7;
+  if (mode === "week" || mode === "agenda") {
+    from.setDate(from.getDate() - dayOfWeek);
+    const to = new Date(from);
+    to.setDate(to.getDate() + 7);
+    return { from: from.toISOString(), to: to.toISOString() };
+  }
+
+  const to = new Date(from);
+  to.setDate(to.getDate() + 1);
+  return { from: from.toISOString(), to: to.toISOString() };
+}
+
+function rangeContains(
+  outer: { from: string; to: string },
+  inner: { from: string; to: string },
+): boolean {
+  return outer.from <= inner.from && outer.to >= inner.to;
 }
 
 function capitalize(s: string): string {

@@ -45,7 +45,7 @@ export async function getThreadMessages(
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { error: "РќРµ Р°РІС‚РѕСЂРёР·РѕРІР°РЅ." };
+  if (!user) return { error: "Не авторизован." };
 
   const { data: membership, error: membershipError } = await supabase
     .from("chat_thread_members")
@@ -54,7 +54,7 @@ export async function getThreadMessages(
     .eq("user_id", user.id)
     .maybeSingle();
   if (membershipError) return { error: membershipError.message };
-  if (!membership) return { error: "Р§Р°С‚ РЅРµ РЅР°Р№РґРµРЅ." };
+  if (!membership) return { error: "Чат не найден." };
 
   const { data, error } = await supabase
     .from("chat_messages")
@@ -166,7 +166,7 @@ async function buildReplyAttachment(
     .eq("user_id", userId)
     .maybeSingle();
   if (membershipError) return { error: membershipError.message };
-  if (!membership) return { error: "Р§Р°С‚ РЅРµ РЅР°Р№РґРµРЅ." };
+  if (!membership) return { error: "Чат не найден." };
 
   const { data: reply, error: replyError } = await supabase
     .from("chat_messages")
@@ -179,7 +179,7 @@ async function buildReplyAttachment(
     .maybeSingle();
   if (replyError) return { error: replyError.message };
   if (!reply) {
-    return { error: "РЎРѕРѕР±С‰РµРЅРёРµ РґР»СЏ РѕС‚РІРµС‚Р° РЅРµ РЅР°Р№РґРµРЅРѕ." };
+    return { error: "Сообщение для ответа не найдено." };
   }
 
   const replyAttachments = (reply.attachments ?? []) as ChatAttachment[];
