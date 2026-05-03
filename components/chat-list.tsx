@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
 import { getOrCreateDmThread } from "@/app/(app)/chat/actions";
+import { LoadingSpinner } from "@/components/loading-indicator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { initials } from "@/lib/user";
 
@@ -102,7 +103,9 @@ function ChatListRow({ entry }: { entry: ChatListEntry }) {
           )}
         </span>
       </div>
-      {entry.unreadCount > 0 ? (
+      {pending ? (
+        <LoadingSpinner className="size-4 text-muted-foreground" />
+      ) : entry.unreadCount > 0 ? (
         <span className="grid min-w-5 shrink-0 place-items-center rounded-full bg-primary px-1.5 text-[10px] font-semibold leading-none text-primary-foreground">
           {entry.unreadCount > 9 ? "9+" : entry.unreadCount}
         </span>

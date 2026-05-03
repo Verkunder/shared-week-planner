@@ -16,6 +16,7 @@ import {
   type MovieListItem,
   type MoviePage,
 } from "@/app/(app)/movies/actions";
+import { LoadingSpinner } from "@/components/loading-indicator";
 import { MovieDialog } from "@/components/movie-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -313,7 +314,7 @@ function ResultsPane({
       }`}
     >
       {loading && movies.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Загружаем…</p>
+        <LoadingLine label="Загружаем..." />
       ) : movies.length === 0 ? (
         <p className="text-xs text-muted-foreground">{emptyText}</p>
       ) : (
@@ -325,7 +326,7 @@ function ResultsPane({
               className="mt-4 grid h-8 place-items-center"
             >
               {loadingMore ? (
-                <p className="text-xs text-muted-foreground">Загружаем…</p>
+                <LoadingLine label="Загружаем еще..." />
               ) : null}
             </div>
           ) : null}
@@ -389,12 +390,26 @@ function GenresFilter({
             disabled={disabled}
             className="shrink-0 md:h-8 md:w-full md:justify-start md:gap-2 md:px-3 md:text-sm"
           >
+            {disabled && activeId === g.id ? <LoadingSpinner /> : null}
             {g.name}
           </Button>
         ))}
       </div>
       <div className="pointer-events-none absolute inset-y-0 left-0 w-6 bg-linear-to-r from-background to-transparent md:hidden" />
       <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-linear-to-l from-background to-transparent md:hidden" />
+    </div>
+  );
+}
+
+function LoadingLine({ label }: { label: string }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex items-center gap-2 text-xs text-muted-foreground"
+    >
+      <LoadingSpinner />
+      <span>{label}</span>
     </div>
   );
 }

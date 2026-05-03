@@ -10,6 +10,7 @@ import {
   updateEvent,
 } from "@/app/(app)/events/actions";
 import { type EventCategory } from "@/app/(app)/profile/actions";
+import { LoadingSpinner } from "@/components/loading-indicator";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -60,12 +61,14 @@ export function EventDialog({
   currentUserId,
   categories,
   ownerName,
+  onEventsChanged,
   onClose,
 }: {
   state: EventDialogState | null;
   currentUserId: string;
   categories: EventCategory[];
   ownerName: string;
+  onEventsChanged?: () => void;
   onClose: () => void;
 }) {
   const open = state !== null;
@@ -85,6 +88,7 @@ export function EventDialog({
             currentUserId={currentUserId}
             categories={categories}
             ownerName={ownerName}
+            onEventsChanged={onEventsChanged}
             onClose={onClose}
           />
         ) : null}
@@ -98,12 +102,14 @@ function EventDialogBody({
   currentUserId,
   categories,
   ownerName,
+  onEventsChanged,
   onClose,
 }: {
   state: EventDialogState;
   currentUserId: string;
   categories: EventCategory[];
   ownerName: string;
+  onEventsChanged?: () => void;
   onClose: () => void;
 }) {
   const isEdit = state.mode === "edit";
@@ -170,7 +176,10 @@ function EventDialogBody({
         ? await updateEvent(state.id, input)
         : await createEvent(input);
       if (result?.error) setError(result.error);
-      else onClose();
+      else {
+        onEventsChanged?.();
+        onClose();
+      }
     });
   }
 
@@ -180,7 +189,10 @@ function EventDialogBody({
     startTransition(async () => {
       const result = await deleteEvent(state.id);
       if (result?.error) setError(result.error);
-      else onClose();
+      else {
+        onEventsChanged?.();
+        onClose();
+      }
     });
   }
 
@@ -210,7 +222,10 @@ function EventDialogBody({
     startTransition(async () => {
       const result = await duplicateEventToDays(state.id, targets);
       if (result?.error) setError(result.error);
-      else onClose();
+      else {
+        onEventsChanged?.();
+        onClose();
+      }
     });
   }
 
@@ -254,7 +269,11 @@ function EventDialogBody({
             className="h-11 text-sm sm:h-8 sm:text-xs"
           >
             {pending
-              ? "Копируем…"
+              ? (
+                <>
+                  <LoadingSpinner /> Копируем...
+                </>
+              )
               : selectedDays.size === 0
                 ? "Скопировать"
                 : `Скопировать (${selectedDays.size})`}
@@ -448,7 +467,15 @@ function EventDialogBody({
           </Button>
           {!readOnly ? (
             <Button type="submit" disabled={pending}>
-              {pending ? "Сохраняем…" : isEdit ? "Сохранить" : "Создать"}
+              {pending ? (
+                <>
+                  <LoadingSpinner /> Сохраняем...
+                </>
+              ) : isEdit ? (
+                "Сохранить"
+              ) : (
+                "Создать"
+              )}
             </Button>
           ) : null}
         </div>

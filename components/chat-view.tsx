@@ -31,6 +31,7 @@ import {
   sendMessage,
   type ChatAttachment,
 } from "@/app/(app)/chat/actions";
+import { LoadingBar, LoadingSpinner } from "@/components/loading-indicator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -378,6 +379,8 @@ export function ChatView({
         </Button>
       </div>
 
+      {pending ? <LoadingBar label="Выполняем запрос..." /> : null}
+
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 py-3 sm:px-4">
         <div className="mx-auto flex max-w-2xl flex-col gap-3">
           {messages.length === 0 ? (
@@ -496,7 +499,7 @@ export function ChatView({
           aria-label="Отправить"
           className="size-9 shrink-0"
         >
-          <PaperPlaneTiltIcon />
+          {pending ? <LoadingSpinner /> : <PaperPlaneTiltIcon />}
         </Button>
       </form>
 

@@ -23,6 +23,7 @@ import {
   EventDialog,
   type EventDialogState,
 } from "@/components/event-dialog";
+import { LoadingBar } from "@/components/loading-indicator";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -255,6 +256,7 @@ export function CalendarView({
       all_day: arg.event.allDay,
     });
     if (result?.error) arg.revert();
+    else refreshVisibleEvents();
   }
 
   async function handleEventDrop(arg: EventDropArg) {
@@ -285,6 +287,7 @@ export function CalendarView({
         all_day: newAllDay,
       });
       if (result?.error) console.error(result.error);
+      else refreshVisibleEvents();
       return;
     }
 
@@ -295,6 +298,7 @@ export function CalendarView({
         all_day: newAllDay,
       });
       if (result?.error) arg.revert();
+      else refreshVisibleEvents();
       return;
     }
 
@@ -317,6 +321,7 @@ export function CalendarView({
       all_day: choice.all_day,
     });
     if (result?.error) console.error(result.error);
+    else refreshVisibleEvents();
   }
 
   async function confirmDropCopy() {
@@ -329,6 +334,7 @@ export function CalendarView({
       all_day: choice.all_day,
     });
     if (result?.error) console.error(result.error);
+    else refreshVisibleEvents();
   }
 
   function renderEventContent(arg: EventContentArg) {
@@ -442,9 +448,7 @@ export function CalendarView({
           </p>
         ) : null}
         {eventsPending ? (
-          <div className="shrink-0 border-b border-border px-4 py-1 text-[11px] text-muted-foreground">
-            Обновляем события...
-          </div>
+          <LoadingBar label="Обновляем события..." />
         ) : null}
         <div className={cn("flex-1 overflow-hidden", showAgenda ? "" : "p-2 sm:p-4")}>
           <div className={cn("h-full", showAgenda ? "hidden" : "block")}>
@@ -485,6 +489,7 @@ export function CalendarView({
         currentUserId={currentUserId}
         categories={dialogCategories}
         ownerName={editingOwnerName}
+        onEventsChanged={refreshVisibleEvents}
         onClose={() => setDialog(null)}
       />
       <Dialog
